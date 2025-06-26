@@ -1,0 +1,526 @@
+---
+title: "Rhesus and Human Bulk RNA Sequencing Analysis"
+output: html_document
+date: "2025-06-26"
+---
+
+```{r setup, include=FALSE}
+```{r setup, include=FALSE}
+# Load required packages
+library(tidyverse)
+library(pheatmap)
+library(RColorBrewer)
+library(rio)
+
+# Set custom color palette (reversed RdBu)
+my_colors <- colorRampPalette(rev(brewer.pal(n = 11, name = "RdBu")))(100)
+
+```
+
+
+```{r cars}
+# ==== Human TO/DO Heatmap ====
+
+# Load human data
+human_path <- "data/dfhuman_genesofinterest.txt"  # Update to relative path if needed
+human_table <- read.table(human_path, header = TRUE, fill = TRUE)
+
+# Log2 transform (add pseudocount to avoid log2(0))
+human_hm <- log2(human_table + 0.1)
+human_hm[!is.finite(human_hm)] <- NA  # Replace -Inf/Inf with NA
+human_hm <- t(human_hm)  # Transpose for heatmap
+
+# Plot heatmap
+pheatmap(human_hm,
+         cluster_rows = FALSE,
+         cluster_cols = TRUE,
+         fontsize_row = 25,
+         fontsize_col = 25,
+         cellheight = 25,
+         cellwidth = 25,
+         show_colnames = TRUE,
+         border_color = "black",
+         na_col = "gray60",
+         color = my_colors,
+         treeheight_col = 25
+)
+
+```
+
+
+
+```{r pressure, echo=FALSE}
+# ==== Rhesus TO/DO Heatmap ====
+
+# Load rhesus data
+rhesus_path <- "data/dfrhesus_genesofinterest.txt"  # Update to relative path if needed
+rhesus_table <- read.table(rhesus_path, header = TRUE, fill = TRUE)
+
+# Log2 transform with pseudocount
+rhesus_hm <- log2(rhesus_table + 0.1)
+rhesus_hm[!is.finite(rhesus_hm)] <- NA
+rhesus_hm <- t(rhesus_hm)
+
+# Plot heatmap
+pheatmap(rhesus_hm,
+         cluster_rows = FALSE,
+         cluster_cols = TRUE,
+         fontsize_row = 25,
+         fontsize_col = 25,
+         cellheight = 25,
+         cellwidth = 25,
+         show_colnames = TRUE,
+         border_color = "black",
+         na_col = "gray60",
+         color = my_colors,
+         treeheight_col = 25
+)
+
+```
+
+
+```{r}
+#####PSG heatmaps 
+
+#Human
+hpsg_path <- "/data/HumanPSG.txt"
+hpsg_data <- read.table(hpsg_path, sep = "\t", header = TRUE, row.names = 1)
+
+
+# Convert to matrix and log-transform with pseudocount
+hpsg_matrix <- as.matrix(hpsg_data)
+hpsg_log <- log2(psg_matrix + 0.01)
+
+# Remove genes with no variation
+hpsg_log <- hpsg_log[apply(hpsg_log, 1, sd) > 0, ]
+hpsg_log <- na.omit(hpsg_log)
+
+# Define square size (in points)
+sqrsize <- 25
+
+# Plot heatmap
+pheatmap(hpsg_log,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         scale = "none",
+         fontsize_row = sqrsize,
+         fontsize_col = sqrsize,
+         cellheight = sqrsize,
+         cellwidth = sqrsize,
+         show_colnames = TRUE,
+         border_color = "grey20",
+         na_col = "gray60",
+         color = my_colors,
+         treeheight_col = 10,
+         main = "Human PSG Expression")
+
+#Rhesus
+rpsg_path <- "/data/RhesusPSG.txt"
+rpsg_data <- read.table(rpsg_path, sep = "\t", header = TRUE, row.names = 1)
+
+
+# Convert to matrix and log-transform with pseudocount
+rpsg_matrix <- as.matrix(rpsg_data)
+rpsg_log <- log2(psg_matrix + 0.01)
+
+# Remove genes with no variation
+rpsg_log <- rpsg_log[apply(rpsg_log, 1, sd) > 0, ]
+rpsg_log <- na.omit(rpsg_log)
+
+# Define square size (in points)
+sqrsize <- 25
+
+# Plot heatmap
+pheatmap(rpsg_log,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         scale = "none",
+         fontsize_row = sqrsize,
+         fontsize_col = sqrsize,
+         cellheight = sqrsize,
+         cellwidth = sqrsize,
+         show_colnames = TRUE,
+         border_color = "grey20",
+         na_col = "gray60",
+         color = my_colors,
+         treeheight_col = 10,
+         main = "Human PSG Expression")
+
+```
+
+```{r}
+#rTO vs rDO
+
+
+# Step 1: Read in Excel files
+rhesus_TO <- read_excel("/data/rhesus_TOcounts.xlsx")    # replace with your path
+rhesus_DO <- read_excel("/data/rhesus_DOcounts.xlsx")
+
+
+# Step 2: Set rownames and remove gene column
+# Assumes first column contains gene names
+rhesus_TO <- as.data.frame(rhesus_TO)
+rownames(rhesus_TO) <- rhesus_TO[[1]]
+rhesus_TO <- rhesus_TO[, -1]
+
+rhesus_DO <- as.data.frame(rhesus_DO)
+rownames(rhesus_DO) <- rhesus_DO[[1]]
+rhesus_DO <- rhesus_DO[, -1]
+
+# Step 3: Ensure matching genes across both datasets
+shared_genes <- intersect(rownames(rhesus_TO), rownames(rhesus_DO))
+rhesus_TO <- rhesus_TO[shared_genes, ]
+rhesus_DO <- rhesus_DO[shared_genes, ]
+
+# Step 4: Combine count data
+counts <- cbind(rhesus_TO, rhesus_DO)
+
+# Step 5: Create group vector
+group <- factor(c(rep("TO", ncol(rhesus_TO)), rep("DO", ncol(rhesus_DO))))
+
+counts[is.na(counts)] <- 0
+
+
+# Step 6: Create DGEList object
+dge <- DGEList(counts = counts, group = group)
+
+# Step 7: Filter and normalize
+keep <- filterByExpr(dge)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+dge <- calcNormFactors(dge)
+
+# Step 8: Set up design matrix and run edgeR
+design <- model.matrix(~ group)
+dge <- estimateDisp(dge, design)
+fit <- glmQLFit(dge, design)
+qlf <- glmQLFTest(fit, coef = 2)  # DO vs TO
+top_genes <- topTags(qlf, n = Inf)$table
+
+# Step 9: Save results
+write.csv(top_genes, "DEGs_Rhesus_DO_vs_TO.csv")
+
+# Step 10: Volcano plot
+top_genes$Significance <- "Not Sig"
+top_genes$Significance[top_genes$FDR < 0.05 & top_genes$logFC > 1] <- "Up"
+top_genes$Significance[top_genes$FDR < 0.05 & top_genes$logFC < -1] <- "Down"
+
+ggplot(top_genes, aes(x = logFC, y = -log10(FDR), color = Significance)) +
+  geom_point(alpha = 0.8) +
+  scale_color_manual(values = c("Up" = "red", "Down" = "blue", "Not Sig" = "grey")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  labs(title = "Rhesus DO vs TO: edgeR Volcano Plot",
+       x = "log2 Fold Change", y = "-log10(FDR)") +
+  theme_minimal(base_size = 14)
+
+
+
+```
+
+
+```{r}
+##Comparing human and rhesus DOs
+
+
+gland_decidual_markers <- c(
+  "MUC1",
+  "PAEP",
+  "LIF",
+  "HOXA10",
+  "PRL",
+  "IGFBP1",
+  "SLC2A1",
+  "SERPINE1",
+  "VEGFA",
+  "MMP7",
+  "FOXO1",
+  "SCGB1D2",
+  "SPP1",
+  "IGF1",
+  "TIMP1"
+)
+
+library(readxl)
+
+# Read files
+humanDO_data <- read_excel("/data/human_DOcounts.xlsx")
+rhesusDO_data <- read_excel("/data/rhesus_DOcounts.xlsx")
+
+# Convert to count matrices
+humanDO_counts <- as.data.frame(humanDO_data)
+rownames(humanDO_counts) <- humanDO_counts[[1]]
+humanDO_counts <- humanDO_counts[, -1]
+
+rhesusDO_counts <- as.data.frame(rhesusDO_data)
+rownames(rhesusDO_counts) <- rhesusDO_counts[[1]]
+rhesusDO_counts <- rhesusDO_counts[, -1]
+
+# Optional: replace NAs
+humanDO_counts[is.na(humanDO_counts)] <- 0
+rhesusDO_counts[is.na(rhesusDO_counts)] <- 0
+
+# Find shared gene symbols
+shared_genes <- intersect(rownames(humanDO_counts), rownames(rhesusDO_counts))
+
+# Subset both matrices to shared genes
+humanDO_counts_shared <- humanDO_counts[shared_genes, ]
+rhesusDO_counts_shared <- rhesusDO_counts[shared_genes, ]
+
+all_counts <- cbind(humanDO_counts_shared, rhesusDO_counts_shared)
+
+# Step 2: Subset both count matrices to shared genes
+humanDO_counts_shared <- humanDO_counts[shared_genes, ]
+rhesusDO_counts_shared <- rhesusDO_counts[shared_genes, ]
+
+# Optional: Check dimensions
+# dim(humanDO_counts_shared)
+# dim(rhesusDO_counts_shared)
+
+# Step 3: Combine into one matrix
+all_counts <- cbind(humanDO_counts_shared, rhesusDO_counts_shared)
+
+# Step 4: Create metadata (group = species)
+group <- factor(c(rep("Human", ncol(humanDO_counts_shared)),
+                  rep("Rhesus", ncol(rhesusDO_counts_shared))))
+
+# Step 5: Run edgeR pseudobulk DE analysis
+library(edgeR)
+
+dge <- DGEList(counts = all_counts, group = group)
+dge <- calcNormFactors(dge)
+
+design <- model.matrix(~group)
+dge <- estimateDisp(dge, design)
+fit <- glmQLFit(dge, design)
+res <- glmQLFTest(fit, coef = 2)  # Test difference between species
+
+# Step 6: Get ranked DE results
+top_genes <- topTags(res, n = Inf)$table
+
+# Optional: Write to CSV
+write.csv(top_genes, "species_DE_genes_DO_shared.csv")
+
+# Optional: Volcano plot
+library(EnhancedVolcano)
+EnhancedVolcano(top_genes,
+                lab = rownames(top_genes),
+                x = 'logFC',
+                y = 'FDR',
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                title = "Differential Expression: Human vs Rhesus DO")
+
+#DO Scoring
+
+rhesus_DOdata <- read_excel("/data/rhesus_DOcounts.xlsx")
+human_DOdata  <- read_excel("/data/human_DOcounts.xlsx")
+
+# Set gene names as rownames
+
+rhesusDO_mat <- as.data.frame(rhesus_DOdata)
+rownames(rhesusDO_mat) <- rhesusDO_mat[[1]]
+rhesusDO_mat <- rhesusDO_mat[ , -1]
+
+
+humanDO_mat <- as.data.frame(human_DOdata)
+rownames(humanDO_mat) <- humanDO_mat[[1]]
+humanDO_mat <- humanDO_mat[ , -1]
+
+
+sum(is.na(rhesusDO_mat))  # Count how many NA values there are
+rhesusDO_mat <- rhesusDO_mat[complete.cases(rhesus_mat), ]
+rhesusDO_mat[is.na(rhesusDO_mat)] <- 0
+
+
+ 
+ sum(is.na(humanDO_mat))  # Count how many NA values there are
+humanDO_mat <- humanDO_mat[complete.cases(humanDO_mat), ]
+ humanDO_mat[is.na(humanDO_mat)] <- 0
+
+library(edgeR)
+
+
+
+rhesusDO_dge <- DGEList(counts = rhesusDO_mat)
+humanDO_dge  <- DGEList(counts = humanDO_mat)
+
+
+rhesusDO_cpm <- cpm(rhesusDO_dge, log = TRUE, prior.count = 1)
+humanDO_cpm  <- cpm(humanDO_dge, log = TRUE, prior.count = 1)
+
+# Get valid genes per species
+
+rhesusDO_valid <- intersect(gland_decidual_markers, rownames(rhesusDO_cpm))
+humanDO_valid  <- intersect(gland_decidual_markers, rownames(humanDO_cpm))
+
+# Score by mean log2CPM
+
+rhesusDO_scores <- colMeans(rhesusDO_cpm[rhesusDO_valid, , drop = FALSE])
+humanDO_scores  <- colMeans(humanDO_cpm[humanDO_valid, , drop = FALSE])
+
+
+# Get valid genes for DO samples
+rhesusDO_valid <- intersect(gland_decidual_markers, rownames(rhesusDO_cpm))
+humanDO_valid  <- intersect(gland_decidual_markers, rownames(humanDO_cpm))
+
+# Score by mean log2CPM
+rhesusDO_scores <- colMeans(rhesusDO_cpm[rhesusDO_valid, , drop = FALSE])
+humanDO_scores  <- colMeans(humanDO_cpm[humanDO_valid, , drop = FALSE])
+
+# Round scores to 3 decimal places
+rhesusDO_scores <- round(rhesusDO_scores, 3)
+humanDO_scores  <- round(humanDO_scores, 3)
+
+# Combine into one dataframe
+scores_df <- data.frame(
+  Sample = c(names(rhesusDO_scores), names(humanDO_scores)),
+  Species = c(
+    rep("Rhesus", length(rhesusDO_scores)),
+    rep("Human", length(humanDO_scores))
+  ),
+  Score = c(rhesusDO_scores, humanDO_scores)
+)
+
+write.csv(scores_df, "signature_scores_DO_only.csv", row.names = FALSE)
+
+# Plot
+library(ggplot2)
+ggplot(scores_df, aes(x = Species, y = Score, fill = Species)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.15, size = 2, alpha = 0.8) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Signature Score Comparison - DO Samples Only",
+       y = "Mean log2CPM Score") +
+  scale_fill_manual(values = c("Human" = "#E64B35", "Rhesus" = "#4DBBD5")) +
+  theme(legend.position = "none")
+
+# ANOVA
+anova_result <- aov(Score ~ Species, data = scores_df)
+print(summary(anova_result))
+
+# Annotate p-value on plot
+p_val <- summary(anova_result)[[1]]["Species", "Pr(>F)"]
+p_lab <- paste0("ANOVA p = ", signif(p_val, 3))
+
+ggplot(scores_df, aes(x = Species, y = Score, fill = Species)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.15, size = 2, alpha = 0.8) +
+  annotate("text", x = 1.5, y = max(scores_df$Score) + 0.1, label = p_lab, size = 5) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Signature Score Comparison - DO Samples Only",
+       y = "Mean log2CPM Score") +
+  scale_fill_manual(values = c("Human" = "#E64B35", "Rhesus" = "#4DBBD5")) +
+  theme(legend.position = "none")
+
+
+
+#Example: intersecting shared genes
+shared_genes <- intersect(rownames(humanDO_cpm), rownames(rhesusDO_cpm))
+humanDO_shared <- humanDO_cpm[shared_genes, ]
+rhesusDO_shared <- rhesusDO_cpm[shared_genes, ]
+
+combined_df <- data.frame(
+  Gene = rep(shared_genes, each = ncol(humanDO_shared) + ncol(rhesusDO_shared)),
+  Sample = rep(c(colnames(humanDO_shared), colnames(rhesusDO_shared)), times = length(shared_genes)),
+  Expression = c(as.vector(humanDO_shared), as.vector(rhesusDO_shared)),
+  Species = rep(c(rep("Human", ncol(humanDO_shared)), rep("Rhesus", ncol(rhesusDO_shared))), times = length(shared_genes))
+)
+
+# edgeR pseudobulk example
+dge <- DGEList(counts = cbind(humanDO_counts, rhesusDO_counts))
+dge <- calcNormFactors(dge)
+group <- factor(c(rep("Human", ncol(humanDO_counts)), rep("Rhesus", ncol(rhesusDO_counts))))
+design <- model.matrix(~group)
+dge <- estimateDisp(dge, design)
+fit <- glmQLFit(dge, design)
+res <- glmQLFTest(fit, coef = 2)  # test Human vs. Rhesus
+
+top_genes <- topTags(res, n = Inf)$table
+
+
+# Select top 30 DEGs based on FDR
+top_deg_genes <- rownames(top_genes[top_genes$FDR < 0.05, ])[1:30]
+# Recalculate log2 CPM from shared raw counts
+dge <- DGEList(counts = all_counts)  # all_counts = shared genes from both species
+dge <- calcNormFactors(dge)
+log_cpm <- cpm(dge, log = TRUE, prior.count = 1)
+
+
+heatmap_mat <- log_cpm[top_deg_genes, ]
+
+# Match column order to samples in the heatmap
+annotation_col <- data.frame(
+  Species = rep(c("Human", "Rhesus"),
+                times = c(ncol(humanDO_counts_shared), ncol(rhesusDO_counts_shared)))
+)
+rownames(annotation_col) <- colnames(heatmap_mat)
+
+
+
+```
+
+```{r}
+#Conserved Genes in DO comparison
+
+# Already created log2 CPM matrix with shared genes:
+# humanDO_counts_shared, rhesusDO_counts_shared
+
+dge <- DGEList(counts = cbind(humanDO_counts_shared, rhesusDO_counts_shared))
+dge <- calcNormFactors(dge)
+log_cpm <- cpm(dge, log = TRUE, prior.count = 1)
+
+# Split log_cpm by species
+human_cols <- colnames(humanDO_counts_shared)
+rhesus_cols <- colnames(rhesusDO_counts_shared)
+
+log_cpm_human  <- log_cpm[, human_cols]
+log_cpm_rhesus <- log_cpm[, rhesus_cols]
+
+# Calculate average expression per gene in each species
+mean_human  <- rowMeans(log_cpm_human)
+mean_rhesus <- rowMeans(log_cpm_rhesus)
+
+# Combine into a data frame
+avg_expr_df <- data.frame(
+  Gene = rownames(log_cpm),
+  Mean_Human = mean_human,
+  Mean_Rhesus = mean_rhesus,
+  Avg_Both = (mean_human + mean_rhesus) / 2
+)
+
+# Select top 30 expressed genes in both
+top_genes <- avg_expr_df[order(-avg_expr_df$Avg_Both), ][1:30, ]
+
+# Optional: View or export
+print(top_genes)
+write.csv(top_genes, "top_expressed_genes_in_both_species.csv", row.names = FALSE)
+
+
+top_genes_df <- topTags(res, n = Inf)$table  # this flattens the list to a data.frame
+# Ensure numeric columns (in case you saved/reloaded from CSV)
+top_genes_df$logFC <- as.numeric(as.character(top_genes_df$logFC))
+top_genes_df$FDR   <- as.numeric(as.character(top_genes_df$FDR))
+
+# Now filter for conserved genes
+conserved_genes <- top_genes_df[
+  abs(top_genes_df$logFC) < 0.25 & top_genes_df$FDR > 0.5,
+]
+
+
+conservedgenes <- c("NRIP1", "RBFOX2", "MACF1", "DENND1A", "WIPF1", "ARHGAP24", "DOCK5", 
+           "MYO1E", "PIK3CB", "PPARG", "ELMO1", "FNDC3B", "ARHGAP10", 
+           "TEAD1", "PCSK5", "NCAM1")
+ego <- enrichGO(
+  gene          = conservedgenes,
+  OrgDb         = org.Hs.eg.db,   
+  keyType       = "SYMBOL",
+  ont           = "BP",            # Biological Process
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.5,
+  qvalueCutoff  = 0.5
+)
+
+library(enrichplot)
+dotplot(ego, showCategory = 15) 
+```
+
