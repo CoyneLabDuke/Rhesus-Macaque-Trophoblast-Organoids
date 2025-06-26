@@ -1,0 +1,452 @@
+---
+title: "Rhesus and Human Single Cell Slingshot"
+output: html_document
+date: "2025-06-26"
+---
+---
+title: "Slingshot Human vs Rhesus"
+output: html_document
+date: "2024-04-11"
+---
+```{r}
+library(Seurat)
+library(ggplot2)
+library(sctransform)
+library(SeuratWrappers)
+library(cellranger)
+library(monocle3)
+library(magrittr)
+library(data.table)
+library(slingshot)
+library(clustree)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(RColorBrewer)
+library(GGally)
+library(gplots)
+library(plotly)
+library(scales)
+library(SingleCellExperiment)
+library(ggbeeswarm)
+library(CellChat)
+library(tradeSeq)
+library(ComplexHeatmap)
+library(colorRamp2)
+```
+
+
+
+```{r}
+##Load seurat objects
+
+hCOTO <- readRDS("/data/hCOTO.harm.FINAL.2.14.24.rds")
+rCOTO <- readRDS("/data/rCOTO.harm.FINAL.2.2.24.rds")
+rhCOTO <- readRDS("/data/HumanvsRhesus.harm.2.14.24.rds")
+rhCOTO_rhesus <- readRDS("/data/HumanvsRhesus.harm_rhesus.6.19.24.rds")
+rhCOTO_human <- readRDS("/data/HumanvsRhesus.harm_human.6.19.24.rds")
+```
+
+```{r}
+DimPlot(rCOTO, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+DimPlot(rCOTO, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"), split.by="orig.ident")
+
+DimPlot(hCOTO, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "EVT"= "#FFE926", "STB"= "#F64DFF"))
+DimPlot(hCOTO, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "EVT"= "#FFE926", "STB"= "#F64DFF"), split.by="orig.ident")
+
+DimPlot(rhCOTO_rhesus, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB-1"= "#FF7300", "CTB-2"= "#FFE926", "STB"= "#F64DFF"), split.by="orig.ident")
+
+
+DimPlot(rhCOTO_human, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB-1"= "#FF7300", "CTB-2"= "#FFE926", "STB"= "#F64DFF"), split.by="orig.ident")
+```
+
+
+```{r}
+DefaultAssay(hCOTO)  <- "SCT"
+DefaultAssay(rCOTO)  <- "SCT"
+DefaultAssay(rhCOTO_human) <- "SCT"
+DefaultAssay(rhCOTO_rhesus) <- "SCT"
+
+
+hCOTOtraj <- subset(hCOTO, idents = c("CTBp-1", "CTBp-2", "CTB", "STB"))
+hCOTO.sce <- as.SingleCellExperiment(hCOTOtraj)
+rCOTO.sce <- as.SingleCellExperiment(rCOTO)
+rhCOTO_human.sce <- as.SingleCellExperiment(rhCOTO_human)
+rhCOTO_rhesus.sce <- as.SingleCellExperiment(rhCOTO_rhesus)
+```
+
+```{r}
+#Run Slingshot
+hCOTO.scecl <- slingshot(hCOTO.sce, clusterLabels = 'ident', reducedDim = "PCA",allow.breaks = FALSE)
+
+rCOTO.scecl <- slingshot(rCOTO.sce, clusterLabels = 'ident', reducedDim = "PCA",allow.breaks = FALSE)
+
+rhCOTO_human.scecl <- slingshot(rhCOTO_human.sce, clusterLabels = 'ident', reducedDim = "PCA",allow.breaks = FALSE)
+
+rhCOTO_rhesus.scecl <- slingshot(rhCOTO_rhesus.sce, clusterLabels = 'ident', reducedDim = "PCA",allow.breaks = FALSE)
+```
+
+```{r}
+slo1 <- SlingshotDataSet(hCOTO.scecl)
+slo1
+slo2 <- SlingshotDataSet(rCOTO.scecl)
+slo2
+slo3 <- SlingshotDataSet(rhCOTO_human.scecl)
+slo3
+slo4 <- SlingshotDataSet(rhCOTO_rhesus.scecl)
+slo4
+```
+
+
+```{r}
+DefaultAssay(rhCOTO)  <- "SCT"
+noCTB2 <- subset(rhCOTO, idents = c("CTBp-1", "CTBp-2", "CTB-1", "STB"))
+rhCOTO.sce <- as.SingleCellExperiment(noCTB2)
+```
+
+```{r}
+rhCOTO.scecl <- slingshot(rhCOTO.sce, clusterLabels = 'ident', reducedDim = "PCA",allow.breaks = FALSE)
+```
+
+```{r}
+slo5 <- SlingshotDataSet(rhCOTO.scecl)
+slo5
+
+
+```{r}
+counts3 <- as.matrix(noCTB2@assays$RNA@counts)
+filt_counts3 <- counts3[rowSums(counts3 > 5) > ncol(counts3)/100, ]
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 7
+sce5 <- fitGAM(counts = filt_counts3, sds=slo3,
+               nknots = 5, verbose = TRUE, conditions =as.factor(noCTB2$stim))
+```
+
+```{r}
+assoRes_humanvsrhesusTO <- associationTest(sce3, lineages = TRUE)
+write.csv(assoRes_humanvsrhesusTO, file="assoRes_humanvsrhesusTO_lower knots.4.20.24.csv")
+```
+
+```{r}
+saveRDS(sce5, file = "hversusrCOTO_fitGAM_4.21.24.rds")
+```
+
+```
+
+```{r}
+#Run Fitgam
+counts <- as.matrix(hCOTOtraj@assays$RNA@counts)
+filt_counts <- counts[rowSums(counts > 5) > ncol(counts)/100, ]
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 7
+sce <- fitGAM(filt_counts,
+                       sds=slo1,
+                       nknots = 4, sce = TRUE, verbose=TRUE)
+
+saveRDS(sce, file = "hCOTO_fitGAM_4.19.24.rds")
+
+counts2 <- as.matrix(rCOTO@assays$RNA@counts)
+filt_counts2 <- counts2[rowSums(counts2 > 5) > ncol(counts2)/100, ]
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 7
+sce2 <- fitGAM(filt_counts2,
+                       sds=slo2,
+                       nknots = 4, sce = TRUE, verbose=TRUE)
+
+saveRDS(sce2, file = "rCOTO_fitGAM_6.17.24.rds")
+
+counts3 <- as.matrix(rhCOTO_human@assays$RNA@counts)
+filt_counts3 <- counts3[rowSums(counts3 > 5) > ncol(counts3)/100, ]
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 7
+sce3 <- fitGAM(filt_counts3,
+                       sds=slo3,
+                       nknots = 4, sce = TRUE, verbose=TRUE)
+saveRDS(sce3, file = "rhCOTO_human_fitGAM_6.20.24.rds")
+
+
+counts4 <- as.matrix(rhCOTO_rhesus@assays$RNA@counts)
+filt_counts4 <- counts4[rowSums(counts4 > 5) > ncol(counts4)/100, ]
+BPPARAM <- BiocParallel::bpparam()
+BPPARAM$workers <- 7
+sce4 <- fitGAM(filt_counts4,
+                       sds=slo4,
+                       nknots = 4, sce = TRUE, verbose=TRUE)
+saveRDS(sce4, file = "rhCOTO_rhesus_fitGAM_6.20.24.rds")
+```
+
+
+
+```{r}
+#Association Test
+assoRes_hCOTO <- associationTest(sce, lineages = TRUE)
+write.csv(assoRes_hCOTO, file="assoRes_hCOTO.4.19.24.csv")
+
+assoRes_rCOTO <- associationTest(sce2, lineages = TRUE)
+write.csv(assoRes_rCOTO, file="assoRes_rCOTO.4.19.24.csv")
+
+p.adjusted <- p.adjust(assoRes_hCOTO$pvalue, method = "fdr")
+assoRes_hCOTO$adjustedPValue <- p.adjusted
+significantGenes <- assoRes_hCOTO[which(assoRes_hCOTO$adjustedPValue < 0.05), ]
+write.csv(significantGenes, file="assoRes_hCOTO.significantGenes.4.19.24.csv")
+
+p.adjusted <- p.adjust(assoRes_rCOTO$pvalue, method = "fdr")
+assoRes_rCOTO$adjustedPValue <- p.adjusted
+rhesussignificantGenes <- assoRes_rCOTO[which(assoRes_rCOTO$adjustedPValue < 0.05), ]
+write.csv(significantGenes, file="assoRes_rCOTO.significantGenes.4.19.24.csv")
+```
+
+
+```{r}
+startRes <- startVsEndTest(sce,l2fc = log2(1))
+
+startRes <- startVsEndTest(sce2,l2fc = log2(1))
+```
+
+
+```{r}
+order <- order(startRes$waldStat, decreasing = TRUE)
+startRes100 <- names(sce)[order[1:100]]
+logcounts_matrix <- assays(hCOTO.scecl)$logcounts
+specific_logcounts <- logcounts_matrix[startRes100, ]
+specific_logcounts_matrix <- as.matrix(specific_logcounts)
+
+```
+
+```{r}
+order <- order(startRes$waldStat, decreasing = TRUE)
+startRes200 <- names(sce2)[order[1:200]]
+logcounts_matrix <- assays(rCOTO.scecl)$logcounts
+specific_logcounts <- logcounts_matrix[startRes200, ]
+specific_logcounts_matrix <- as.matrix(specific_logcounts)
+```
+
+
+```{r}
+to_plot <- specific_logcounts_matrix
+ptime <- hCOTO.scecl$slingPseudotime_1
+ptime_order <- colnames(to_plot)[order(ptime)]
+lineage_cells <- colnames(hCOTO.scecl)[!is.na(ptime)]
+
+
+annotations <- colData(hCOTO.scecl)[lineage_cells, 
+                            c("slingPseudotime_1", 
+                              "ident")] %>% 
+    as.data.frame()
+
+ha <- HeatmapAnnotation(df = annotations, col=list(ident=c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "STB"= "#F64DFF"), show_legend = TRUE))
+
+```
+
+```{r}
+to_plot <- specific_logcounts_matrix
+ptime <- rCOTO.scecl$slingPseudotime_1
+ptime_order <- colnames(to_plot)[order(ptime)]
+lineage_cells <- colnames(rCOTO.scecl)[!is.na(ptime)]
+
+
+annotations <- colData(rCOTO.scecl)[lineage_cells, 
+                            c("slingPseudotime_1", 
+                              "ident")] %>% 
+    as.data.frame()
+
+ha <- HeatmapAnnotation(df = annotations, col=list(ident=c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"), show_legend = TRUE))
+```
+
+
+```{r}
+library(colorRamp2)
+Heatmap(to_plot,
+         column_order = ptime_order,
+         show_column_names = FALSE,
+         show_row_names = TRUE, row_names_gp = gpar(fontsize = 5),
+         top_annotation = ha, na_col="#0505A6",  use_raster = TRUE, raster_by_magick = TRUE, raster_magick_filter= "Bessel", col = colorRamp2(c(0, 0.5, 0.75, 1, 1.5, 2, 2.5), c("#0505A6",  "#00FFFF", "#02F002","#ADFF2F", "#FFFF00","#FFA500", "#FF0000")))
+```
+
+
+****Load specific file list****
+```{r}
+data <- read.delim("/data/Human_traj.txt")
+index_order <- order(data$waldStat, decreasing = TRUE)
+data <- data[index_order, ]
+top_50_genes <- head(data$X, 50)
+logcounts_matrix <- assays(hCOTO.scecl)$logcounts
+specific_logcounts <- logcounts_matrix[top_50_genes, ]
+specific_logcounts_matrix <- as.matrix(specific_logcounts)
+```
+
+```{r}
+data <- read.csv("/data/rCOTO_Toptraj.csv")
+index_order <- order(data$waldStat, decreasing = TRUE)
+data <- data[index_order, ]
+top_50_genes <- head(data$X, 50)
+logcounts_matrix <- assays(rCOTO.scecl)$logcounts
+specific_logcounts <- logcounts_matrix[top_50_genes, ]
+specific_logcounts_matrix <- as.matrix(specific_logcounts)
+```
+
+
+```{r}
+to_plot <- specific_logcounts_matrix
+ptime <- hCOTO.scecl$slingPseudotime_1
+ptime_order <- colnames(to_plot)[order(ptime)]
+lineage_cells <- colnames(hCOTO.scecl)[!is.na(ptime)]
+```
+
+```{r}
+to_plot <- specific_logcounts_matrix
+ptime <- rCOTO.scecl$slingPseudotime_1
+ptime_order <- colnames(to_plot)[order(ptime)]
+lineage_cells <- colnames(rCOTO.scecl)[!is.na(ptime)]
+```
+
+
+```{r}
+annotations <- colData(hCOTO.scecl)[lineage_cells, 
+                            c("slingPseudotime_1", 
+                              "ident")] %>% 
+    as.data.frame()
+
+ha <- HeatmapAnnotation(df = annotations, col=list(ident=c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "STB"= "#F64DFF"), show_legend = TRUE))
+
+```
+
+```{r}
+annotations <- colData(rCOTO.scecl)[lineage_cells, 
+                            c("slingPseudotime_1", 
+                              "ident")] %>% 
+    as.data.frame()
+
+ha <- HeatmapAnnotation(df = annotations, col=list(ident=c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"), show_legend = TRUE))
+```
+
+
+```{r}
+library(colorRamp2)
+Heatmap(to_plot,
+         column_order = ptime_order,
+         show_column_names = FALSE,
+         show_row_names = TRUE, row_names_gp = gpar(fontsize = 5),
+         top_annotation = ha, na_col="#0505A6",  use_raster = TRUE, raster_by_magick = TRUE, raster_magick_filter= "Bessel", col = colorRamp2(c(0, 0.5, 0.75, 1, 1.5, 2, 2.5), c("#0505A6",  "#00FFFF", "#02F002","#ADFF2F", "#FFFF00","#FFA500", "#FF0000")))
+```
+
+
+
+```{r}
+DefaultAssay(rhCOTO)  <- "SCT"
+noCTB2 <- subset(rhCOTO, idents = c("CTBp-1", "CTBp-2", "CTB-1", "STB"))
+rhCOTO.sce <- as.SingleCellExperiment(noCTB2)
+```
+
+
+```{r}
+data <- read.csv("/Users/cbc54/Desktop/Human_traj.csv")
+index_order <- order(data$waldStat, decreasing = TRUE)
+data <- data[index_order, ]
+top_150_genes <- head(data$X, 150)
+logcounts_matrix <- assays(rhCOTO.scecl)$logcounts
+specific_logcounts <- logcounts_matrix[top_150_genes, ]
+specific_logcounts_matrix <- as.matrix(specific_logcounts)
+```
+
+```{r}
+data <- read.csv("/Users/arc107/rhCOTO_traj20pick_6.28.csv")
+index_order <- order(data$waldStat, decreasing = TRUE)
+data <- data[index_order, ]
+top_200_genes <- head(data$X, 200)
+logcounts_matrix <- assays(rhCOTO.scecl)$logcounts
+specific_logcounts <- logcounts_matrix[top_200_genes, ]
+specific_logcounts_matrix <- as.matrix(specific_logcounts)
+```
+
+
+```{r}
+to_plot <- specific_logcounts_matrix
+ptime <- rhCOTO.scecl$slingPseudotime_1
+ptime_order <- colnames(to_plot)[order(ptime)]
+lineage_cells <- colnames(rhCOTO.scecl)[!is.na(ptime)]
+```
+
+
+```{r}
+#Get positive and negative genes for trajectory
+library(predictSmooth)
+sce <- readRDS("/data/hCOTO_fitGAM_5.1.24.rds")
+
+smoothers <- predictSmooth(sce2, gene = rownames(sce2), nPoints = 100)
+direction_df <- smoothers %>%
+     group_by(gene, lineage) %>%
+     arrange(time) %>%
+     summarize(direction = case_when(
+         all(diff(yhat) > 0) ~ "increasing",
+         all(diff(yhat) < 0) ~ "decreasing",
+         TRUE ~ "mixed"
+     )) %>%
+     ungroup()
+
+increasing_genes <- direction_df %>% filter(direction == "increasing")
+decreasing_genes <- direction_df %>% filter(direction == "decreasing")
+write.csv(increasing_genes, "increasing_genes.hTO.csv", row.names = FALSE)
+write.csv(decreasing_genes, "decreasing_genes.hTO.csv", row.names = FALSE)
+```
+
+
+
+```{r}
+annotations <- colData(rhCOTO.scecl)[lineage_cells, 
+                                    c("slingPseudotime_1", 
+                                      "ident")] %>% 
+    as.data.frame()
+
+ha <- HeatmapAnnotation(df = annotations, col=list(ident=c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB-1"= "#FF7300", "STB"= "#F64DFF"), show_legend = TRUE))
+```
+
+
+```{r}
+#Get positive and negative genes for trajectory
+library(predictSmooth)
+sce <- readRDS("/data/hCOTO_fitGAM_5.1.24.rds")
+
+smoothers <- predictSmooth(sce2, gene = rownames(sce2), nPoints = 100)
+direction_df <- smoothers %>%
+     group_by(gene, lineage) %>%
+     arrange(time) %>%
+     summarize(direction = case_when(
+         all(diff(yhat) > 0) ~ "increasing",
+         all(diff(yhat) < 0) ~ "decreasing",
+         TRUE ~ "mixed"
+     )) %>%
+     ungroup()
+
+increasing_genes <- direction_df %>% filter(direction == "increasing")
+decreasing_genes <- direction_df %>% filter(direction == "decreasing")
+write.csv(increasing_genes, "increasing_genes.hTO.csv", row.names = FALSE)
+write.csv(decreasing_genes, "decreasing_genes.hTO.csv", row.names = FALSE)
+```
+
+
+
+```{r}
+annotations <- colData(hCOTO.scecl)[lineage_cells, 
+                                    c("slingPseudotime_1", 
+                                      "ident")] %>% 
+    as.data.frame()
+
+ha <- HeatmapAnnotation(df = annotations, col=list(ident=c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "STB"= "#F64DFF"), col=list(slingPseudotime_1=c("#FFFFFF", "#0505A6")), show_legend = TRUE))
+
+pdf("hTOpseudo150.pdf")
+hTOpseudo150 <- Heatmap(to_plot,
+        column_order = ptime_order,
+        show_column_names = FALSE,
+        show_row_names = TRUE, row_names_gp = gpar(fontsize = 5),
+        top_annotation = ha, na_col="#0505A6",  use_raster = TRUE, raster_by_magick = TRUE, raster_magick_filter= "Bessel", col = colorRamp2(c(0, 0.5, 0.75, 1, 1.5, 2, 2.5), c("#0505A6",  "#00FFFF", "#02F002","#ADFF2F", "#FFFF00","#FFA500", "#FF0000")))
+dev.off()
+```
+
+
+
+```
+
+
+
