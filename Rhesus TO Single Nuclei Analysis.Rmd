@@ -1,0 +1,1239 @@
+---
+title: "Rhesus TO Single Nuclei Analysis"
+output: html_document
+date: "2025-06-27"
+---
+
+```{r setup, include=FALSE}
+library(Seurat) #version 4.4.0
+library(BiocManager)
+library(remotes)
+library(devtools)
+library(viridisLite)
+library(RColorBrewer)
+library(harmony)
+library(SeuratWrappers)
+library(viridis)
+library(ggplot2)
+library(monocle3)
+library(CellChat)
+library(slingshot)
+library(ggbeeswarm)
+library(ggthemes)
+library(Polychrome)
+
+library(DESeq2)
+library(scCustomize)
+library(multtest)
+library(metap)
+library(tidyverse)
+library(EnhancedVolcano)
+```
+
+
+
+```{r cars}
+#Load data
+rTO05P7EVT.data <- Read10X(data.dir ="/data/rTO05P7EVTfiltered_feature_bc_matrix/")
+rTO05P7EVT <- CreateSeuratObject(counts = rTO05P7EVT.data, project = "rTO05_P7EVT", min.cells = 3, min.features = 200)
+
+rTO05P11.data <- Read10X(data.dir ="/data/rTO05P11filtered_feature_bc_matrix/")
+rTO05P11 <- CreateSeuratObject(counts = rTO05P11.data, project = "rTO05P11", min.cells = 3, min.features = 200)
+r01.data <- Read10X(data.dir ="data/r01filtered_feature_bc_matrix/")
+r01 <- CreateSeuratObject(counts = r01.data, project = "r01", min.cells = 3, min.features = 200)
+r01EVT.data <- Read10X(data.dir ="/data/r01EVTfiltered_feature_bc_matrix/")
+r01EVT <- CreateSeuratObject(counts = r01EVT.data, project = "r01EVT", min.cells = 3, min.features = 200)
+r02.data <- Read10X(data.dir ="/data/r02filtered_feature_bc_matrix/")
+r02 <- CreateSeuratObject(counts = r02.data, project = "r02", min.cells = 3, min.features = 200)
+r02EVT.data <- Read10X(data.dir ="/data/r02EVTfiltered_feature_bc_matrix/")
+r02EVT <- CreateSeuratObject(counts = r02EVT.data, project = "r02EVT", min.cells = 3, min.features = 200)
+```
+
+
+```{r pressure, echo=FALSE}
+apply(
+  rTO05P7EVT@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> rTO05P7EVT$Percent.Largest.Gene
+rTO05P7EVT[["percent.mt"]] <- PercentageFeatureSet(rTO05P7EVT, pattern = "^MT")
+rTO05P7EVT[["percent.rb"]] <- PercentageFeatureSet(rTO05P7EVT, pattern = "^RP[SL]")
+
+
+apply(
+  rTO05P11@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> rTO05P11$Percent.Largest.Gene
+rTO05P11[["percent.mt"]] <- PercentageFeatureSet(rTO05P11, pattern = "^MT")
+rTO05P11[["percent.rb"]] <- PercentageFeatureSet(rTO05P11, pattern = "^RP[SL]")
+
+apply(
+  r01@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> r01$Percent.Largest.Gene
+r01[["percent.mt"]] <- PercentageFeatureSet(r01, pattern = "^MT")
+r01[["percent.rb"]] <- PercentageFeatureSet(r01, pattern = "^RP[SL]")
+
+apply(
+  r01EVT@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> r01EVT$Percent.Largest.Gene
+r01EVT[["percent.mt"]] <- PercentageFeatureSet(r01EVT, pattern = "^MT")
+r01EVT[["percent.rb"]] <- PercentageFeatureSet(r01EVT, pattern = "^RP[SL]")
+
+apply(
+  r02@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> r02$Percent.Largest.Gene
+r02[["percent.mt"]] <- PercentageFeatureSet(r02, pattern = "^MT")
+r02[["percent.rb"]] <- PercentageFeatureSet(r02, pattern = "^RP[SL]")
+
+apply(
+  r02EVT@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> r02EVT$Percent.Largest.Gene
+r02EVT[["percent.mt"]] <- PercentageFeatureSet(r02EVT, pattern = "^MT")
+r02EVT[["percent.rb"]] <- PercentageFeatureSet(r02EVT, pattern = "^RP[SL]")
+
+```
+
+```{r}
+VlnPlot(
+  object = rTO05P7EVT,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+
+VlnPlot(
+  object = rTO05P11,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+
+VlnPlot(
+  object = r01,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = r01EVT,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = r02,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = r02EVT,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+```
+
+```{r}
+#QC
+subset(
+  rTO05P7EVT,
+  nFeature_RNA > 200 & 
+    nFeature_RNA < 6000 & nCount_RNA < 23000 & percent.rb<4 &
+    percent.mt< 0.8 & percent.mt > 0.05) -> rTO05P7EVT
+
+
+subset(
+  rTO05P11,
+  nFeature_RNA>200 & 
+    nFeature_RNA < 4500 & nCount_RNA<18000 & percent.rb<5 &
+    percent.mt<0.8 & percent.mt>0.05) -> rTO05P11
+
+subset(
+  r01,
+  nFeature_RNA>200 & 
+    nFeature_RNA < 7500 & nCount_RNA<30000 & percent.rb<3 &
+    percent.mt<1 & percent.mt>0.05)-> r01
+
+subset(
+  r01EVT,
+  nFeature_RNA>200 & 
+    nFeature_RNA < 6000 & nCount_RNA<25000 & percent.rb<2.5 &
+    percent.mt<1 & percent.mt>0.05) -> r01EVT
+
+subset(
+  r02,
+  nFeature_RNA>200 & 
+    nFeature_RNA < 8500 & nCount_RNA<50000 & percent.rb<4 &
+    percent.mt<0.8 & percent.mt>0.05) -> r02
+
+subset(
+  r02EVT,
+  nFeature_RNA>200 & 
+    nFeature_RNA < 7500 & nCount_RNA<30000 & percent.rb<3 &
+    percent.mt<0.9 & percent.mt>0.05) -> r02EVT
+
+```
+
+```{r}
+VlnPlot(
+  object = rTO05P7EVT,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = rTO05P11,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+
+VlnPlot(
+  object = r01,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = r01EVT,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = r02,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+VlnPlot(
+  object = r02EVT,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+```
+
+```{r}
+EVT_TO <- merge(rTO05P7EVT, 
+               y = list( r01EVT, r02EVT), 
+               add.cell.ids = c("EVT.1", "EVT.2", "EVT.3"), 
+               project = "EVT")
+dim(EVT_TO)
+
+TO <- merge(rTO05P11, 
+               y = list(r01, r02), 
+               add.cell.ids = c("TO.1", "TO.2", "TO.3"), 
+               project = "TO")
+dim(TO)
+```
+```
+
+```{r}
+library(biomaRt)
+mart <- useMart("ENSEMBL_MART_ENSEMBL", dataset = "mmulatta_gene_ensembl")
+genes.table <- try(biomaRt::getBM(attributes = c("ensembl_gene_id", "external_gene_name",
+                                                 "description", "gene_biotype", "chromosome_name", "start_position"), mart = mart,
+                                  useCache = F))
+
+
+genes.table <- genes.table[genes.table$external_gene_name %in% rownames(EVT_TO),
+]
+chrY.gene = genes.table$external_gene_name[genes.table$chromosome_name == "Y"]
+EVT_TO$pct_chrY = colSums(EVT_TO@assays$RNA@counts[chrY.gene, ])/colSums(EVT_TO@assays$RNA@counts)
+chrX.gene = genes.table$external_gene_name[genes.table$chromosome_name == "X"]
+EVT_TO$pct_chrX = colSums(EVT_TO@assays$RNA@counts[chrX.gene, ])/colSums(EVT_TO@assays$RNA@counts)
+
+genes.table <- genes.table[genes.table$external_gene_name %in% rownames(TO),
+]
+chrY.gene = genes.table$external_gene_name[genes.table$chromosome_name == "Y"]
+TO$pct_chrY = colSums(TO@assays$RNA@counts[chrY.gene, ])/colSums(TO@assays$RNA@counts)
+chrX.gene = genes.table$external_gene_name[genes.table$chromosome_name == "X"]
+TO$pct_chrX = colSums(TO@assays$RNA@counts[chrX.gene, ])/colSums(TO@assays$RNA@counts)
+```
+
+```{r}
+EVT.list <- SplitObject(EVT_TO, split.by = "orig.ident")
+EVT.list <- lapply(EVT.list, FUN = SCTransform, assay = 'RNA', new.assay.name = 'SCT',  vars.to.regress = c('nFeature_RNA', 'nCount_RNA', 'percent.mt', 'percent.rb', 'pct_chrX', 'pct_chrY'), vst.flavor = "v2")
+
+TO.list <- SplitObject(TO, split.by = "orig.ident")
+TO.list <- lapply(TO.list, FUN = SCTransform, assay = 'RNA', new.assay.name = 'SCT',  vars.to.regress = c('nFeature_RNA', 'nCount_RNA', 'percent.mt', 'percent.rb', 'pct_chrX', 'pct_chrY'), vst.flavor = "v2")
+
+EVTfeatures <- SelectIntegrationFeatures(object.list = EVT.list, nfeatures = 3000)
+EVT.list <- PrepSCTIntegration(object.list = EVT.list, anchor.features = EVTfeatures)
+EVT.anchors <- FindIntegrationAnchors(object.list = EVT.list, normalization.method = "SCT", anchor.features = EVTfeatures)
+EVT.int <- IntegrateData(anchorset = EVT.anchors, normalization.method = "SCT")
+
+
+TOfeatures <- SelectIntegrationFeatures(object.list = TO.list, nfeatures = 3000)
+TO.list <- PrepSCTIntegration(object.list = TO.list, anchor.features = TOfeatures)
+TO.anchors <- FindIntegrationAnchors(object.list = TO.list, normalization.method = "SCT", anchor.features = TOfeatures)
+TO.int <- IntegrateData(anchorset = TO.anchors, normalization.method = "SCT")
+```
+
+```{r}
+
+TO.int <- RunPCA(TO.int, verbose = TRUE)
+ElbowPlot(TO.int, reduction = "pca", ndims = 50)
+Seurat::DimHeatmap(TO.int, dims = 1:10, cells = 100, balanced = TRUE)
+
+EVT.int <- RunPCA(EVT.int, verbose = TRUE)
+ElbowPlot(EVT.int, reduction = "pca", ndims = 50)
+Seurat::DimHeatmap(EVT.int, dims = 1:10, cells = 100, balanced = TRUE)
+```
+
+```{r}
+TO.int <- RunUMAP(TO.int, reduction = "pca", dims = 1:40)
+EVT.int <- RunUMAP(EVT.int, reduction = "pca", dims = 1:40)
+```
+
+```{r}
+DimPlot(TO.int, reduction = "umap", label.size = 7,pt.size = 0.75, label=T, split.by="orig.ident")
+DimPlot(EVT.int, reduction = "umap", label.size = 7,pt.size = 0.75, label=T, split.by="orig.ident")
+```
+
+```{r}
+TO.int <- FindNeighbors(TO.int, reduction = "pca", dims = 1:40)
+TO.int <- FindClusters(TO.int, resolution = 0.3)
+
+EVT.int <- FindNeighbors(EVT.int, reduction = "pca", dims = 1:40)
+EVT.int <- FindClusters(EVT.int, resolution = 0.3)
+```
+
+
+```{r}
+library(harmony)
+library(scCustomize)
+EVT.merge <-Merge_Seurat_List(
+EVT.list,
+  add.cell.ids = NULL,
+  merge.data = TRUE,
+  project = "EVTmerged"
+)
+TO.merge <-Merge_Seurat_List(
+ TO.list,
+  add.cell.ids = NULL,
+  merge.data = TRUE,
+  project = "TOmerged"
+)
+VariableFeatures(EVT.merge) <- EVTfeatures
+VariableFeatures(TO.merge) <- TOfeatures
+
+EVT.merge <- RunPCA(EVT.merge, assay = "SCT", npcs = 50, group.by.vars="orig.ident")
+TO.merge <- RunPCA(TO.merge, assay = "SCT", npcs = 50, group.by.vars="orig.ident")
+EVT.harm <- RunHarmony(EVT.merge, 
+                        group.by.vars = "orig.ident", 
+                        reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+TO.harm <- RunHarmony(TO.merge, 
+                        group.by.vars = "orig.ident", 
+                        reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+```
+
+```{r}
+
+ElbowPlot(EVT.harm, reduction = "pca", ndims = 50)
+ElbowPlot(TO.harm, reduction = "pca", ndims = 50)
+```
+
+```{r}
+EVT.harm  <- RunUMAP(EVT.harm , reduction = "harmony", assay = "SCT", dims = 1:30)
+EVT.harm  <- FindNeighbors(EVT.harm, reduction = "harmony")
+DefaultAssay(EVT.harm)  <- "SCT"
+
+TO.harm  <- RunUMAP(TO.harm , reduction = "harmony", assay = "SCT", dims = 1:30)
+TO.harm  <- FindNeighbors(TO.harm, reduction = "harmony")
+DefaultAssay(TO.harm)  <- "SCT"
+```
+
+```{r}
+EVT.harm <- FindClusters(EVT.harm, reduction = "harmony", resolution = 0.35)
+TO.harm <- FindClusters(TO.harm, reduction = "harmony", resolution = 0.3)
+```
+
+
+```{r}
+DimPlot(EVT.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(EVT.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label=T,
+        label.size = 5)
+```
+
+
+```{r}
+DimPlot(TO.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(TO.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label=T,
+        label.size = 5)
+```
+
+```{r}
+DefaultAssay(EVT.harm)  <- "SCT"
+EVT.harm <- RunALRA(EVT.harm, setDelfaultAssay=FALSE)
+DefaultAssay(EVT.harm)  <- "RNA"
+EVT.harm <- NormalizeData(EVT.harm, verbose = FALSE)
+EVT.harm <- ScaleData(EVT.harm, verbose = TRUE)
+
+DefaultAssay(TO.harm)  <- "SCT"
+TO.harm <- RunALRA(TO.harm, setDelfaultAssay=FALSE)
+DefaultAssay(TO.harm)  <- "RNA"
+TO.harm <- NormalizeData(TO.harm, verbose = FALSE)
+TO.harm <- ScaleData(TO.harm, verbose = TRUE)
+```
+
+#####Figure 4-- rTO SN vs SC
+```{r}
+#Load rTO SC analyzed RDS
+SC <- readRDS("/data/rCOTO.harm.FINAL.2.2.24.rds")
+SN <- TO.harm
+
+SC$stim <- "SC"
+SN$stim <- "SN"
+
+SCvsSN <- merge(SC, y = c(SN), project = "SCvsSN")
+VariableFeatures(SCvsSN[["SCT"]]) <- rownames(SCvsSN[["SCT"]]@scale.data)
+SCvsSN.harm <- RunPCA(SCvsSN, assay = "SCT", npcs = 50, group.by.vars="stim")
+
+library(harmony)
+test2 <- RunHarmony(SCvsSN.harm, 
+                     group.by.vars = "stim", 
+                     reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+
+ElbowPlot(test2, reduction = "pca", ndims = 50)
+SCvsSN.harm  <- RunUMAP(test2 , reduction = "harmony", assay = "SCT", dims = 1:40)
+SCvsSN.harm  <- FindNeighbors(SCvsSN.harm, reduction = "harmony")
+DefaultAssay(SCvsSN.harm)  <- "SCT"
+SCvsSN.harm <- FindClusters(SCvsSN.harm, reduction = "harmony", resolution = 0.2)
+
+DimPlot(SCvsSN.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(SCvsSN.harm, reduction = "umap", split.by="stim", pt.size = 1, label=T,
+         label.size = 5)
+
+#Identifying Markers
+SCvsSN.harm <- PrepSCTFindMarkers(SCvsSN.harm)
+SCvsSNmarkers <- FindAllMarkers(SCvsSN.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(SCvsSNmarkers, file = "SCvsSNmarkers_april32025.csv")
+
+#Naming Clusters
+print(levels(SCvsSN.harm))
+cluster.ids <- c("CTB-1",
+"CTBp-1",
+"CTB-2",
+"CTBp-2",
+"STB",
+"CTB-3",
+"CTB-4",
+"CTB-5")
+
+names(cluster.ids) <- levels(SCvsSN.harm)
+SCvsSN.harm <- RenameIdents(SCvsSN.harm, cluster.ids)
+print(levels(SCvsSN.harm))
+
+#Cluster Colors
+SCvsSNcluster_colors <- c("CTB-1" = "#1E1EFF",
+"CTBp-1"= "#FF7300",
+"CTB-2" = "#75ABEF",
+"CTBp-2" = "#FFE926",
+"STB" = "#F64DFF",
+"CTB-3" = "#3a66f7",
+"CTB-4" = "#0072B2",
+"CTB-5" = "#b3cde3")
+
+
+
+DimPlot(SCvsSN.harm, reduction = "umap", label.size = 6,pt.size = 2, cols = SCvsSNcluster_colors)
+
+DimPlot(SCvsSN.harm, reduction = "umap", label.size = 6,pt.size = 1, cols = SCvsSNcluster_colors, split.by = "stim")
+
+#SCvsSN Proportion by code
+SCvsSNpt <- table(Idents(SCvsSN.harm), (SCvsSN.harm$orig.ident))
+SCvsSNpt <- as.data.frame(SCvsSNpt)
+SCvsSNpt$Var1 <- as.character(SCvsSNpt$Var1)
+SCvsSNpt$Var1 <- factor(SCvsSNpt$Var1, levels = c("CTB-1", "CTBp-1", "CTB-2", "CTBp-2", "STB", "CTB-3", "CTB-4", "CTB-5"))
+
+
+SCvsSNptplot <-ggplot(SCvsSNpt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c("CTB-1" = "#1E1EFF",
+"CTBp-1"= "#FF7300",
+"CTB-2" = "#75ABEF",
+"CTBp-2" = "#FFE926",
+"STB" = "#F64DFF",
+"CTB-3" = "#3a66f7",
+"CTB-4" = "#0072B2",
+"CTB-5" = "#b3cde3")) +
+  theme(legend.title = element_blank())
+
+# Set desired cluster order
+levels_to_use <- c("CTBp-1", "CTBp-2", "CTB-1", "CTB-2", "CTB-3", "CTB-4", "CTB-5", "STB")  # your desired order
+Idents(SCvsSN.harm) <- factor(Idents(SCvsSN.harm), levels = levels_to_use)
+
+#Dot plot
+SCvsSNdotplotmarkers <- c("MKI67", "CCNA2", "PCNA", "CDH1", "KRT7", "PEG3", "SMAGP", "CGA", "HOPX", "MMP2")
+
+DefaultAssay(SCvsSN.harm)  <- "alra"
+SCvsSNdotplot <- DotPlot(SCvsSN.harm, features = SCvsSNdotplotmarkers, dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+SCvsSNdotplot
+```
+
+###Figure 3--rTO 
+```{r}
+#rTO Naming of Clusters
+TO.harm <- SN
+print(levels(TO.harm))
+cluster.ids <- c("CTBp-1",
+"CTBp-2",
+"CTB-1",
+"CTBpf",
+"iCTB",
+"STB-1",
+"STB-2")
+
+names(cluster.ids) <- levels(TO.harm)
+TO.harm <- RenameIdents(TO.harm, cluster.ids)
+print(levels(TO.harm))
+
+DimPlot(TO.harm, reduction = "umap", label.size = 6,pt.size = 2, cols = c("CTBp-1"= "#FF7300",  "CTBp-2"= "#FFE926", "CTB-1"= "#1e1eff", "CTBpf"= "#98173D", "iCTB"= "#008080", "STB-1"= "#F64DFF", "STB-2"= "#FF1493"))
+
+#separate by code
+DimPlot(TO.harm, reduction = "umap", label.size = 6,pt.size = 2, split.by = "orig.ident", cols = c("CTBp-1"= "#FF7300",  "CTBp-2"= "#FFE926", "CTB-1"= "#1e1eff", "CTBpf"= "#98173D", "iCTB"= "#008080", "STB-1"= "#F64DFF", "STB-2"= "#FF1493"))
+
+#Proportion plot by code
+pt <- table(Idents(TO.harm), (TO.harm$orig.ident))
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+    theme_bw(base_size = 15) +
+    geom_col(position = "fill", width = 0.5) +
+    xlab("Sample") +
+    ylab("Proportion") +
+   scale_fill_manual(values= c("CTBp-1"= "#FF7300",  "CTBp-2"= "#FFE926", "CTB-1"= "#1e1eff", "CTBpf"= "#98173D", "iCTB"= "#008080", "STB-1"= "#F64DFF", "STB-2"= "#FF1493")) +
+ theme(legend.title = element_blank())
+ 
+#Finding markers
+
+TO.harm <- PrepSCTFindMarkers(TO.harm)
+rTOmarkers <- FindAllMarkers(TO.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+write.csv(rTOmarkers, file = "rTO_markers.csv")
+```
+
+
+###Figure 5
+```{r}
+#Load publically available hTO SN dataset
+hTO.harm <- readRDS("/data/hTO.harm")
+
+DefaultAssay(TO.harm) <- "SCT"  
+TO.harm.sce <- as.SingleCellExperiment(TO.harm)
+ # Extract UMAP coordinates from Seurat object
+umap_coords <- Embeddings(TO.harm, "umap")
+ 
+# Add UMAP coordinates to the SingleCellExperiment object
+reducedDims(TO.harm.sce)$UMAP <- umap_coords
+
+ #Add cluster identities
+TO.harm.sce$ident <- Idents(TO.harm)
+
+
+# Run Slingshot
+ TO.harm.sce <- slingshot(
+   TO.harm.sce,
+   clusterLabels = "ident",
+   reducedDim = "UMAP",
+   start.clus = "CTBp-2"
+)
+ 
+cluster_colors = c("CTBp-1"= "#FF7300",  "CTBp-2"= "#FFE926", "CTB-1"= "#1e1eff", "CTBpf"= "#98173D", "iCTB"= "#008080", "STB-1"= "#F64DFF", "STB-2"= "#FF1493")
+
+plot(umap_coords, col = cluster_colors, pch = 16, asp = 1, main = "Slingshot Trajectories")
+ slo <- SlingshotDataSet(TO.harm.sce)
+slo
+
+lineageTOharm <- getLineages(data = TO.harm.sce, reducedDim = "UMAP",
+clusterLabels = 'ident')
+curvesTOharm <- getCurves(TO.harm.sce, approx_points = 300, thresh = 0.01, stretch = 0.8, allow.breaks = FALSE, shrink = 0.99)
+print(SlingshotDataSet(TO.harm.sce))
+
+library(grDevices)
+ colors <- colorRampPalette(brewer.pal(11,'Spectral')[-6])(100)
+plotcol <- colors[cut(TO.harm.sce$slingPseudotime_1, breaks=100)]
+ plot(reducedDims(TO.harm.sce)$UMAP, col = plotcol, pch=16, asp = 1) + lines(slingCurves(SlingshotDataSet(TO.harm.sce))[[1]], lwd=2, col='black')
+ 
+ TOCurves <- slingCurves(TO.harm.sce)
+ TOharmCurve1XY <- data.frame(X = TOCurves$Lineage1$s[,1], Y = TOCurves$Lineage1$s[,2])
+  TOharmCurve2XY <- data.frame(X = TOCurves$Lineage2$s[,1], Y = TOCurves$Lineage2$s[,2])
+  TOharmCurve3XY <- data.frame(X = TOCurves$Lineage3$s[,1], Y = TOCurves$Lineage3$s[,2])
+ p1 <- DimPlot(TO.harm, reduction = "umap", pt.size = 1) + geom_path(data=TOharmCurve1XY, aes(x=X, y=Y), linewidth = 1) 
+  p2 <- DimPlot(TO.harm, reduction = "umap", pt.size = 1) + geom_path(data=TOharmCurve3XY, aes(x=X, y=Y), linewidth = 1) 
+library(cowplot)
+
+p3 <- FeaturePlot(
+   TO.harm,
+    features = "pseudotime1",
+   pt.size = 1,
+    cols = colorRampPalette(rev(brewer.pal(11, 'Spectral')[-6]))(100)
+) +
+    geom_path(
+       data = TOharmCurve1XY,
+       aes(x = X, y = Y),
+       arrow = arrow(length = unit(0.25, "inches"), type = "closed"),
+      size = 1,
+       color = "black"
+   )
+ p3
+
+p4 <- FeaturePlot(
+    TO.harm,
+   features = "pseudotime2",
+    pt.size = 1,
+   cols = colorRampPalette(rev(brewer.pal(11, 'Spectral')[-6]))(100)
+ ) +
+    geom_path(
+        data = TOharmCurve2XY,
+         aes(x = X, y = Y),
+        arrow = arrow(length = unit(0.25, "inches"), type = "closed"),
+         size = 1,
+         color = "black"
+     )
+ p4
+ 
+ plot_grid(p3+p4)
+
+# Extract pseudotime from SCE
+pseudotime <- slingPseudotime(TO.harm.sce)[,1]  # For Lineage 1
+
+# Add pseudotime to Seurat object metadata
+TO.harm$pseudotime1 <- pseudotime
+
+# Now you can plot
+p3 <- FeaturePlot(
+  TO.harm,
+  features = "pseudotime1",
+  pt.size = 1,
+  cols = colorRampPalette(rev(brewer.pal(11, 'Spectral')[-6]))(100)
+) +
+  geom_path(
+    data = TOharmCurve1XY,
+    aes(x = X, y = Y),
+    arrow = arrow(length = unit(0.25, "inches"), type = "closed"),
+    size = 1,
+    color = "black"
+  )
+
+p3
+
+
+
+# Ensure names match between SCE and Seurat objects
+names(pseudotime) <- colnames(TO.harm)
+
+# Add to Seurat metadata
+TO.harm$pseudotime1 <- pseudotime
+
+library(ggplot2)
+library(Seurat)
+
+# UMAP base with cluster colors
+p <- DimPlot(TO.harm, reduction = "umap", pt.size = 1, cols = cluster_colors)
+
+# Add lineages
+p + 
+  geom_path(data = TOharmCurve1XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) +
+  geom_path(data = TOharmCurve3XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) +
+    geom_path(data = TOharmCurve2XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed"))
+          
+##hTO trajectory
+DefaultAssay(hTO.harm) <- "SCT" 
+hTO.harm.sce <- as.SingleCellExperiment(hTO.harm)
+ # Extract UMAP coordinates from Seurat object
+umap_coords <- Embeddings(hTO.harm, "umap")
+ 
+# Add UMAP coordinates to the SingleCellExperiment object
+reducedDims(hTO.harm.sce)$UMAP <- umap_coords
+
+ #Add cluster identities
+hTO.harm.sce$ident <- Idents(hTO.harm)
+
+
+# Run Slingshot
+ hTO.harm.sce <- slingshot(
+   hTO.harm.sce,
+   clusterLabels = "ident",
+   reducedDim = "UMAP",
+   start.clus = "CTBp-1"
+)
+ 
+cluster_colors = c("CTBp-1" = "#FF7300", 
+  "CTBp-2" = "#FFE926",
+  "CTB-1" = "#1E1EFF", 
+  "STB-1" = "#F64DFF", 
+  "STB-2"= "#FF1493", 
+  "CTB-2" = "#75ABEF", 
+  "STB-3"= "#C71585", 
+  "CTB-3" = "#0033cc", 
+  "CTBpf" = "#8B008B", 
+  "CTB-4" = "#4f9fff")
+
+plot(umap_coords, col = cluster_colors, pch = 16, asp = 1, main = "Slingshot Trajectories")
+ slo2 <- SlingshotDataSet(hTO.harm.sce)
+slo2
+
+lineagehTOharm <- getLineages(data = hTO.harm.sce, reducedDim = "UMAP",
+clusterLabels = 'ident')
+curveshTOharm <- getCurves(hTO.harm.sce, approx_points = 300, thresh = 0.01, stretch = 0.8, allow.breaks = FALSE, shrink = 0.99)
+print(SlingshotDataSet(hTO.harm.sce))
+
+library(grDevices)
+ colors <- colorRampPalette(brewer.pal(11,'Spectral')[-6])(100)
+plotcol <- colors[cut(hTO.harm.sce$slingPseudotime_1, breaks=100)]
+ plot(reducedDims(hTO.harm.sce)$UMAP, col = plotcol, pch=16, asp = 1) + lines(slingCurves(SlingshotDataSet(hTO.harm.sce))[[1]], lwd=2, col='black')
+ 
+ hTOCurves <- slingCurves(hTO.harm.sce)
+ hTOharmCurve1XY <- data.frame(X = hTOCurves$Lineage1$s[,1], Y = hTOCurves$Lineage1$s[,2])
+  hTOharmCurve2XY <- data.frame(X = hTOCurves$Lineage2$s[,1], Y = hTOCurves$Lineage2$s[,2])
+  hTOharmCurve3XY <- data.frame(X = hTOCurves$Lineage3$s[,1], Y = hTOCurves$Lineage3$s[,2])
+  hTOharmCurve4XY <- data.frame(X = hTOCurves$Lineage4$s[,1], Y = hTOCurves$Lineage4$s[,2])
+ p1 <- DimPlot(hTO.harm, reduction = "umap", pt.size = 1, cols = cluster_colors) + geom_path(data=hTOharmCurve1XY, aes(x=X, y=Y), linewidth = 1, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) 
+ 
+ pseudotime <- slingPseudotime(hTO.harm.sce)[,1]  # For Lineage 1
+
+# Add pseudotime to Seurat object metadata
+hTO.harm$pseudotime1 <- pseudotime
+ 
+ p3 <- FeaturePlot(
+  hTO.harm,
+  features = "pseudotime1",
+  pt.size = 1,
+  cols = colorRampPalette(rev(brewer.pal(11, 'Spectral')[-6]))(100)
+) +
+  geom_path(
+    data = hTOharmCurve1XY,
+    aes(x = X, y = Y),
+    arrow = arrow(length = unit(0.25, "inches"), type = "closed"),
+    size = 1,
+    color = "black"
+  )
+
+p3
+
+# Ensure names match between SCE and Seurat objects
+names(pseudotime) <- colnames(hTO.harm)
+
+# Add to Seurat metadata
+hTO.harm$pseudotime1 <- pseudotime
+
+library(ggplot2)
+library(Seurat)
+
+# UMAP base with cluster colors
+p <- DimPlot(hTO.harm, reduction = "umap", pt.size = 1, cols = cluster_colors)
+
+# Add lineages
+p + 
+  geom_path(data = hTOharmCurve1XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) +
+  geom_path(data = hTOharmCurve3XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) +
+    geom_path(data = hTOharmCurve2XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) +
+    geom_path(data = hTOharmCurve4XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed"))
+
+
+##Expression plots along trajectory
+
+plotExpression(rCOTO.scecl, features = c("ERVFRD-1", "HOPX"),
+               x = "cluster",  # Replace with your metadata column name
+               colour_by = c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "STB"= "#F64DFF")) 
+               
+ plotExpression(hCOTO.scecl, features = c("SDC1", "HOPX"),
+               x = "cluster",  # Replace with your metadata column name
+               colour_by = c("CTBp-1"= "#1e1eff", "CTBp-2"="#75abef", "CTB"= "#FF7300", "STB"= "#F64DFF")) 
+
+```
+
+###Figure 6
+
+```{r}
+#Merging rhesus EVTenriched and Mock
+TO.harm$stim <- "TO"
+EVT.harm$stim <- "EVT"
+EVTvsTO <- merge(TO.harm, y = c(EVT.harm), project = "EVT vs TO")
+
+VariableFeatures(EVTvsTO[["SCT"]]) <- rownames(EVTvsTO[["SCT"]]@scale.data)
+
+EVTvsTO.harm <- RunPCA(EVTvsTO, assay = "SCT", npcs = 50, group.by.vars="stim")
+library(harmony)
+test2 <- RunHarmony(EVTvsTO.harm, 
+                        group.by.vars = "stim", 
+                        reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+
+ElbowPlot(test2, reduction = "pca", ndims = 50)
+
+EVTvsTO.harm  <- RunUMAP(test2 , reduction = "harmony", assay = "SCT", dims = 1:40)
+EVTvsTO.harm  <- FindNeighbors(EVTvsTO.harm, reduction = "harmony")
+DefaultAssay(EVTvsTO.harm)  <- "SCT"
+EVTvsTO.harm <- FindClusters(EVTvsTO.harm, reduction = "harmony", resolution = 0.4)
+
+
+DimPlot(EVTvsTO.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(EVTvsTO.harm, reduction = "umap", split.by="stim", pt.size = 1, label=T,
+        label.size = 5)
+        
+        
+#NAMING CLUSTERS
+print(levels(EVTvsTO.harm))
+cluster.ids <- c("CTBp-1",
+"CTB-3",
+"EVT",
+"CTB-1",
+"CTB-2",
+"STB",
+"CTBp-2",
+"CTBp-3")
+
+names(cluster.ids) <- levels(EVTvsTO.harm)
+EVTvsTO.harm<- RenameIdents(EVTvsTO.harm, cluster.ids)
+print(levels(EVTvsTO.harm))
+
+EVTvsTOcluster_colors <- c(
+  "CTBp-1"= "#FF7300",
+"CTB-3"= "#3a66f7",
+"EVT"= "#355E3B",
+"CTB-1" = "#1e1eff",
+"CTB-2"= "#75abef",
+"STB"= "#F64DFF",
+"CTBp-2"= "#FFE926",
+"CTBp-3"= "#FF9F40")
+DimPlot(EVTvsTO.harm, reduction = "umap", pt.size = 1, label.size = 5, cols = EVTvsTOcluster_colors)
+DimPlot(EVTvsTO.harm, reduction = "umap", split.by="stim", pt.size = 1, cols = EVTvsTOcluster_colors, label.size = 5)
+
+#EVTvsTO Proportion by code
+EVTvsTOpt <- table(Idents(EVTvsTO.harm), (EVTvsTO.harm$stim))
+EVTvsTOpt <- as.data.frame(EVTvsTOpt)
+EVTvsTOpt$Var1 <- as.character(EVTvsTOpt$Var1)
+EVTvsTOpt$Var1 <- factor(EVTvsTOpt$Var1, levels = c( "CTBp-1",
+"CTB-3", "EVT", "CTBp-2", "CTB-1", "CTB-2", "STB",  "CTBp-3"))
+
+
+EVTvsTOptplot <-ggplot(EVTvsTOpt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c( "CTBp-1"= "#FF7300",
+"CTB-3"= "#3a66f7",
+"EVT"= "#355E3B",
+"CTB-1" = "#1e1eff",
+"CTB-2"= "#75abef",
+"STB"= "#F64DFF",
+"CTBp-2"= "#FFE926",
+"CTBp-3"= "#FF9F40")) +
+  theme(legend.title = element_blank())
+
+
+# Set desired cluster order
+levels_to_use <- c("CTBp-1", "CTBp-2", "CTBp-3", "CTB-1", "CTB-2", "CTB-3", "EVT",  "STB")  # your desired order
+Idents(EVTvsTO.harm) <- factor(Idents(EVTvsTO.harm), levels = levels_to_use)
+
+#EVTvsTO dotplot
+DefaultAssay(EVTvsTO.harm)  <- "alra"
+rEVTvsTOdotplot <- DotPlot(EVTvsTO.harm, features = "MKI67", dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+rEVTvsTOdotplot
+
+
+```
+
+```{r}
+#NAMING rTO-EVTenriched CLUSTERS
+print(levels(EVT.harm))
+cluster.ids <- c("EVT-1",
+"EVT-2",
+"CTBp-1",
+"CTB",
+"CTBp-2",
+"CTBpf",
+"TB-t",
+"STB")
+names(cluster.ids) <- levels(EVT.harm)
+EVT.harm <- RenameIdents(EVT.harm, cluster.ids)
+print(levels(EVT.harm))
+
+rEVTcluster_colors <- c("EVT-1"= "#355E3B",
+                    "EVT-2"= "#2E8B57", 
+                    "CTBp-1"= "#FF7300", 
+                    "CTB"= "#1e1eff",
+                    "CTBp-2"="#FFE926", 
+                    "CTBpf"= "#98173D", 
+                    "TB-t"= "#9A4DFF", 
+                    "STB"= "#F64DFF")
+
+DimPlot(EVT.harm, reduction = "umap", pt.size = 1, label.size = 5,  cols = rEVTcluster_colors)
+DimPlot(EVT.harm, reduction = "umap", pt.size = 1, label.size = 5,  split.by= "orig.ident", cols = cluster_colors)
+
+#rEVT Proportion
+rEVTpt2 <- table(Idents(EVT.harm))
+rEVTpt2<- as.data.frame(rEVTpt2)
+rEVTpt2$Var1 <- factor(rEVTpt2$Var1, levels = c(
+  "CTBp-1","CTBp-2", "CTB", "EVT-1","EVT-2", "CTBpf","TB-t", "STB"))
+colnames(rEVTpt2) <- c("CellType", "Freq")
+rEVTpt2$Proportion <-rEVTpt2$Freq / sum(rEVTpt2$Freq)
+
+rEVTpt2plot <- ggplot(rEVTpt2, aes(x = "All Samples", y = Proportion, fill = CellType)) +  
+  theme_bw(base_size = 15) +  
+  geom_col(width = 0.5) +  # Single bar
+  xlab("") +  # Remove x-axis label
+  ylab("Proportion") +  
+  scale_fill_manual(values = c("CTBp-1"= "#FF7300",
+                              "CTBp-2"="#FFE926",
+                              "CTB"= "#1e1eff",
+                               "EVT-1"= "#355E3B",
+                              "EVT-2"= "#2E8B57", 
+                              "CTBpf"= "#98173D", 
+                    "TB-t"= "#9A4DFF", 
+                    "STB"= "#F64DFF")) +  
+  theme(legend.title = element_blank())
+  
+#FIND MARKERS
+EVT.harm <- PrepSCTFindMarkers(EVT.harm)
+EVTmarkers <- FindAllMarkers(EVT.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+# Set desired cluster order
+levels_to_use <- c("CTBp-1", "CTBp-2", "CTB", "EVT-1", "EVT-2", "CTBpf", "TB-t", "STB")  # your desired order
+Idents(EVT.harm) <- factor(Idents(EVT.harm), levels = levels_to_use)
+
+#DOT PLOT
+DefaultAssay(EVT.harm)  <- "alra"
+rEVTdotplot <- DotPlot(EVT.harm, features = "MKI67, dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+rEVTdotplot
+```
+
+```{r}
+DefaultAssay(EVT.harm) <- "SCT"  
+EVT.harm.sce <- as.SingleCellExperiment(EVT.harm)
+ # Extract UMAP coordinates from Seurat object
+umap_coords <- Embeddings(EVT.harm, "umap")
+ 
+# Add UMAP coordinates to the SingleCellExperiment object
+reducedDims(EVT.harm.sce)$UMAP <- umap_coords
+
+ #Add cluster identities
+EVT.harm.sce$ident <- Idents(EVT.harm)
+
+
+# Run Slingshot
+ EVT.harm.sce <- slingshot(
+   EVT.harm.sce,
+   clusterLabels = "ident",
+   reducedDim = "UMAP",
+   start.clus = "CTBp-1"
+)
+ 
+cluster_colors = c("EVT-1"= "#355E3B",
+                    "EVT-2"= "#2E8B57", 
+                    "CTBp-1"= "#FF7300", 
+                    "CTB"= "#1e1eff",
+                    "CTBp-2"="#FFE926", 
+                    "CTBpf"= "#98173D", 
+                    "TB-t"= "#9A4DFF", 
+                    "STB"= "#F64DFF")
+
+plot(umap_coords, col = cluster_colors, pch = 16, asp = 1, main = "Slingshot Trajectories")
+ slo <- SlingshotDataSet(EVT.harm.sce)
+slo
+
+lineageEVTharm <- getLineages(data = EVT.harm.sce, reducedDim = "UMAP",
+clusterLabels = 'ident')
+curvesEVTharm <- getCurves(EVT.harm.sce, approx_points = 300, thresh = 0.01, stretch = 0.8, allow.breaks = FALSE, shrink = 0.99)
+print(SlingshotDataSet(EVT.harm.sce))
+
+library(grDevices)
+ colors <- colorRampPalette(brewer.pal(11,'Spectral')[-6])(100)
+plotcol <- colors[cut(EVT.harm.sce$slingPseudotime_1, breaks=100)]
+ plot(reducedDims(EVT.harm.sce)$UMAP, col = plotcol, pch=16, asp = 1) + lines(slingCurves(SlingshotDataSet(EVT.harm.sce))[[1]], lwd=2, col='black')
+ 
+EVTCurves <- slingCurves(EVT.harm.sce)
+ EVTharmCurve1XY <- data.frame(X = EVTCurves$Lineage1$s[,1], Y = EVTCurves$Lineage1$s[,2])
+  EVTharmCurve2XY <- data.frame(X = EVTCurves$Lineage2$s[,1], Y = EVTCurves$Lineage2$s[,2])
+  
+  # Ensure names match between SCE and Seurat objects
+names(pseudotime) <- colnames(EVT.harm)
+
+# Add to Seurat metadata
+EVT.harm$pseudotime1 <- pseudotime
+
+library(ggplot2)
+library(Seurat)
+
+# UMAP base with cluster colors
+p <- DimPlot(EVT.harm, reduction = "umap", pt.size = 1, cols = cluster_colors)
+
+# Add lineages
+p + 
+  geom_path(data = EVTharmCurve1XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) +
+    geom_path(data = EVTharmCurve2XY, aes(x = X, y = Y), color = "black", size = 1.2, arrow = arrow(length = unit(0.25, "inches"), type = "closed")) 
+
+
+```
+
+###Figure 7
+```{r}
+#merging rhesus and human EVT
+
+hEVT.harm$stim <- "hEVT"
+EVT.harm$stim <- "rEVT"
+hEVTvsrEVT <- merge(hEVT.harm, y = c(EVT.harm), project = "hEVT vs rEVT")
+
+VariableFeatures(hEVTvsrEVT[["SCT"]]) <- rownames(hEVTvsrEVT[["SCT"]]@scale.data)
+
+hEVTvsrEVT.harm <- RunPCA(hEVTvsrEVT, assay = "SCT", npcs = 50, group.by.vars="stim")
+library(harmony)
+test2 <- RunHarmony(hEVTvsrEVT.harm, 
+                        group.by.vars = "stim", 
+                        reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+
+ElbowPlot(test2, reduction = "pca", ndims = 50)
+
+hEVTvsrEVT.harm  <- RunUMAP(test2 , reduction = "harmony", assay = "SCT", dims = 1:40)
+hEVTvsrEVT.harm  <- FindNeighbors(hEVTvsrEVT.harm, reduction = "harmony")
+DefaultAssay(hEVTvsrEVT.harm)  <- "SCT"
+hEVTvsrEVT.harm <- FindClusters(hEVTvsrEVT.harm, reduction = "harmony", resolution = 0.4)
+
+
+DimPlot(hEVTvsrEVT.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(hEVTvsrEVT.harm, reduction = "umap", split.by="stim", pt.size = 1, label=T,
+        label.size = 5)
+        
+hEVTvsrEVT.harm <- PrepSCTFindMarkers(hEVTvsrEVT.harm)
+hEVTvsrEVTmarkers <- FindAllMarkers(hEVTvsrEVT.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+        
+print(levels(hEVTvsrEVT.harm))
+cluster.ids <- c("EVT-1", "CTB-1", "CTBp","CTB-2", "CTB-3", "EVT-2", "STB","CTB-4")
+
+names(cluster.ids) <- levels(hEVTvsrEVT.harm)
+hEVTvsrEVT.harm<- RenameIdents(hEVTvsrEVT.harm, cluster.ids)
+print(levels(hEVTvsrEVT.harm))
+
+hEVTvsrEVTcluster_colors <- c("CTB-1" = "#1e1eff", 
+  "EVT-1" = "#355E3B", 
+  "CTB-2" = "#75abef",
+  "EVT-2" = "#2E8B57", 
+  "CTB-3" = "#3a66f7", 
+  "STB" = "#F64DFF", 
+  "CTBp" = "#FF7300", 
+  "CTB-4" = "#0072B2")
+
+DimPlot(hEVTvsrEVT.harm, reduction = "umap", pt.size = 1, label.size = 5, cols = c(cluster_colors))
+DimPlot(hEVTvsrEVT.harm, reduction = "umap", pt.size = 1, label.size = 5, cols = c(cluster_colors), split.by = "stim")
+
+#Proportion
+hEVTvsrEVTpt <- table(Idents(hEVTvsrEVT.harm), (hEVTvsrEVT.harm$stim))
+hEVTvsrEVTpt <- as.data.frame(hEVTvsrEVTpt)
+hEVTvsrEVTpt$Var1 <- as.character(hEVTvsrEVTpt$Var1)
+hEVTvsrEVTpt$Var1 <- factor(hEVTvsrEVTpt$Var1, levels = c( "CTBp", "CTB-1", "CTB-2", "CTB-3", "CTB-4", "EVT-1", "EVT-2", "STB"))
+
+hEVTvsrEVTptplot <-ggplot(hEVTvsrEVTpt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c("CTB-1" = "#1e1eff", 
+  "EVT-1" = "#355E3B", 
+  "CTB-2" = "#75abef",
+  "EVT-2" = "#2E8B57", 
+  "CTB-3" = "#3a66f7", 
+  "STB" = "#F64DFF", 
+  "CTBp" = "#FF7300", 
+  "CTB-4" = "#0072B2")) +
+  theme(legend.title = element_blank())
+  
+  levels_to_use <- c("CTBp", "CTB-1", "CTB-2", "CTB-3", "CTB-4", "EVT-1", "EVT-2", "STB")  # your desired order
+Idents(hEVTvsrEVT.harm) <- factor(Idents(hEVTvsrEVT.harm), levels = levels_to_use)
+
+#Dot plot
+hEVTvsrEVTdotplotmarkers <- c("MKI67", "CCNA2", "PCNA", "CDH1", "CLDN4", "EPCAM", "NOTCH2", "GRHL1", "NCAM1", "HLA-G", "DIO2", "CXCR6", "HOPX", "INSL4", "SDC1")
+
+DefaultAssay(hEVTvsrEVT.harm)  <- "alra"
+hEVTvsrEVTdotplot <- DotPlot(hEVTvsrEVT.harm, features = hEVTvsrEVTdotplotmarkers, dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+hEVTvsrEVTdotplot
+
+#Dot plot of EVT enriched markers
+EVTcomparisongenes <- c("ITGA1", "SMAD3", "TGFB2", "IL20RA", "LPGAT1", "IRF8", "CPXM1", "SLC43A1", "IQCF2", "SEPTIN5", "HAVCR1", "LPL", "HSPG2", "FN1", "SPINK6")
+DefaultAssay(hEVTvsrEVT.harm)  <- "alra"
+
+hEVTvsrEVTdotplot <- DotPlot(hEVTvsrEVT.harm, features = EVTcomparisongenes, dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+
+
+hEVTvsrEVTdotplot
+
+#Trajectory
+DefaultAssay(hEVTvsrEVT.harm) <- "SCT"  # Or "RNA", depending on what you want
+hEVTvsrEVT_clean <- hEVTvsrEVT.harm
+hEVTvsrEVT_clean@assays <- list(SCT = hEVTvsrEVT.harm[["SCT"]])  # Replace with "RNA" if needed
+hEVTvsrEVT.sce <- as.SingleCellExperiment(hEVTvsrEVT_clean)
+ # Extract UMAP coordinates from Seurat object
+umap_coords <- Embeddings(hEVTvsrEVT.harm, "umap")
+ 
+# Add UMAP coordinates to the SingleCellExperiment object
+reducedDims(hEVTvsrEVT.sce)$UMAP <- umap_coords
+
+ #Add cluster identities
+ hEVTvsrEVT.sce$ident <- Idents(hEVTvsrEVT.harm)
+
+# Add cluster identities
+hEVTvsrEVT.sce$ident <- Idents(hEVTvsrEVT.harm)
+
+# Run Slingshot
+ hEVTvsrEVT.sce <- slingshot(
+  hEVTvsrEVT.sce,
+   clusterLabels = "ident",
+   reducedDim = "UMAP",
+   start.clus = "CTBp"
+)
+
+plot(umap_coords, col = cluster_colors, pch = 16, asp = 1, main = "Slingshot Trajectories")
+
+ slo <- SlingshotDataSet(hEVTvsrEVT.sce)
+slo
+
+lineagehEVTvsrEVT <- getLineages(data = hEVTvsrEVT.sce, reducedDim = "UMAP",
+clusterLabels = 'ident')
+curveshEVTvsrEVT <- getCurves(hEVTvsrEVT.sce, approx_points = 300, thresh = 0.01, stretch = 0.8, allow.breaks = FALSE, shrink = 0.99)
+print(SlingshotDataSet(hEVTvsrEVT.sce))
+
+library(grDevices)
+ colors <- colorRampPalette(brewer.pal(11,'Spectral')[-6])(100)
+plotcol <- colors[cut(hEVTvsrEVT.sce$slingPseudotime_1, breaks=100)]
+ plot(reducedDims(hEVTvsrEVT.sce)$UMAP, col = plotcol, pch=16, asp = 1) + lines(slingCurves(SlingshotDataSet(hEVTvsrEVT.sce))[[1]], lwd=2, col='black')
+ 
+ EVTCurves <- slingCurves(hEVTvsrEVT.sce)
+ EVTCurve1XY <- data.frame(X = EVTCurves$Lineage1$s[,1], Y = EVTCurves$Lineage1$s[,2])
+  EVTCurve2XY <- data.frame(X = EVTCurves$Lineage2$s[,1], Y = EVTCurves$Lineage2$s[,2])
+   EVTCurve3XY <- data.frame(X = EVTCurves$Lineage3$s[,1], Y = EVTCurves$Lineage3$s[,2])
+    EVTCurve4XY <- data.frame(X = EVTCurves$Lineage4$s[,1], Y = EVTCurves$Lineage4$s[,2])
+     EVTCurve5XY <- data.frame(X = EVTCurves$Lineage5$s[,1], Y = EVTCurves$Lineage5$s[,2])
+      EVTCurve6XY <- data.frame(X = EVTCurves$Lineage6$s[,1], Y = EVTCurves$Lineage6$s[,2])
+ p1 <- DimPlot(hEVTvsrEVT.harm, reduction = "umap", pt.size = 1) + geom_path(data=EVTCurve1XY, aes(x=X, y=Y), linewidth = 1) 
+library(cowplot)
+
+p3 <- FeaturePlot(
+   hEVTvsrEVT.harm,
+    features = "pseudotime1",
+   pt.size = 1,
+    cols = colorRampPalette(rev(brewer.pal(11, 'Spectral')[-6]))(100)
+) +
+    geom_path(
+       data = EVTCurve1XY,
+       aes(x = X, y = Y),
+       arrow = arrow(length = unit(0.25, "inches"), type = "closed"),
+      size = 1,
+       color = "black"
+   )
+ p3
+
+p4 <- FeaturePlot(
+    hEVTvsrEVT.harm,
+   features = "pseudotime2",
+    pt.size = 1,
+   cols = colorRampPalette(rev(brewer.pal(11, 'Spectral')[-6]))(100)
+ ) +
+    geom_path(
+        data = EVTCurve1XY,
+         aes(x = X, y = Y),
+        arrow = arrow(length = unit(0.25, "inches"), type = "closed"),
+         size = 1,
+         color = "black"
+     )
+ p4
+ 
+ plot_grid(p3+p4)
+ 
+ 
+ # Ensure names match between SCE and Seurat objects
+names(pseudotime) <- colnames(hEVTvsrEVT.harm)
+
+# Add to Seurat metadata
+hEVTvsrEVT.harm$pseudotime1 <- pseudotime
+
+library(ggplot2)
+library(Seurat)
+
+# UMAP base with cluster colors
+p <- DimPlot(hEVTvsrEVT.harm, reduction = "umap", pt.size = 1, cols = cluster_colors)
+
+# Add lineages
+library(grid)  # for unit()
+
+p +  
+  geom_path(data = EVTCurve1XY, aes(x = X, y = Y), color = "black", size = 1.2,
+            arrow = arrow(length = unit(0.1, "inches"), type = "closed")) +
+  geom_path(data = EVTCurve3XY, aes(x = X, y = Y), color = "black", size = 1.2,
+            arrow = arrow(length = unit(0.1, "inches"), type = "closed")) +
+  geom_path(data = EVTCurve2XY, aes(x = X, y = Y), color = "black", size = 1.2,
+            arrow = arrow(length = unit(0.1, "inches"), type = "closed")) +
+  geom_path(data = EVTCurve4XY, aes(x = X, y = Y), color = "black", size = 1.2,
+            arrow = arrow(length = unit(0.1, "inches"), type = "closed")) +
+  geom_path(data = EVTCurve5XY, aes(x = X, y = Y), color = "black", size = 1.2,
+            arrow = arrow(length = unit(0.1, "inches"), type = "closed")) 
+            
+#Subset EVT cells
+evt_subset <- subset(hEVTvsrEVT.harm, idents = c("EVT-1", "EVT-2"))
+ DefaultAssay(evt_subset) <- "SCT"  
+
+# Prep if using SCT
+evt_subset <- PrepSCTFindMarkers(evt_subset)
+
+# Find DEGs between stim groups
+stim_DEGs <- FindMarkers(
+  evt_subset,
+  ident.1 = "hEVT",
+  ident.2 = "rEVT",
+  group.by = "stim",
+  min.pct = 0.1,
+  logfc.threshold = 0.25
+)
+# Add gene column
+stim_DEGs$gene <- rownames(stim_DEGs)
+# Filter significant DEGs (optional: relax thresholds if needed)
+sig_genes <- stim_DEGs %>%
+  dplyr::filter(p_val_adj < 0.1 & abs(avg_log2FC) > 0.25) %>%
+  dplyr::pull(gene)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+ego_stim <- enrichGO(
+  gene         = sig_genes,
+  OrgDb        = org.Hs.eg.db,
+  keyType      = "SYMBOL",
+  ont          = "BP",  # or "MF" / "CC"
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.5,
+  qvalueCutoff  = 0.5
+)
+dotplot(ego_stim, showCategory = 20) + ggtitle("GO Enrichment between stim groups")
+```
+
+
+```{r}
+#Percentage of cluster within each stim
+##For supplement
+library(ggplot2)
+
+# Add cluster and stim info to metadata
+df <- data.frame(
+  cluster = Idents(hEVTvsrEVT.harm),
+  stim = hEVTvsrEVT.harm$stim
+)
+
+# Plot percentage of each cluster within each stim
+ggplot(df, aes(x = cluster, fill = stim)) +
+  geom_bar(position = "fill") +  # "fill" makes it show percentages
+  ylab("Proportion within cluster") +
+  theme_minimal() +
+  coord_flip()
+```
+
