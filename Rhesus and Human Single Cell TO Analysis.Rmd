@@ -1,0 +1,1149 @@
+---
+title: "Rhesus and Human Single Cell TO Analysis"
+output: html_document
+date: "2025-06-27"
+---
+
+```{r setup, include=FALSE}
+library(Seurat)
+library(ggplot2)
+library(sctransform)
+library(SeuratWrappers)
+library(cellranger)
+library(monocle3)
+library(magrittr)
+library(data.table)
+library(slingshot)
+library(clustree)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(RColorBrewer)
+library(GGally)
+library(gplots)
+library(plotly)
+library(scales)
+library(SingleCellExperiment)
+library(ggbeeswarm)
+library(CellChat)
+```
+
+
+```{r cars}
+***Upload files***
+```{r}
+CO80.data <- Read10X(data.dir ="data/filtered_feature_bc_matrix/")
+CO80 <- CreateSeuratObject(counts = CO80.data, project = "CO80", min.cells = 3, min.features = 200)
+TO68.data <- Read10X(data.dir ="/data/TO68filtered_feature_bc_matrix/")
+TO68 <- CreateSeuratObject(counts = TO68.data, project = "TO68", min.cells = 3, min.features = 200)
+CO82.data <- Read10X(data.dir ="/data/CO82filtered_feature_bc_matrix/")
+CO82 <- CreateSeuratObject(counts = CO82.data, project = "CO82", min.cells = 3, min.features = 200)
+CO81.data <- Read10X(data.dir ="/data/CO81filtered_feature_bc_matrix/")
+CO81 <- CreateSeuratObject(counts = CO81.data, project = "CO81", min.cells = 3, min.features = 200)
+
+
+rTO02.data <- Read10X(data.dir ="/data/rTO02filtered_feature_bc_matrix-5/")
+rTO02 <- CreateSeuratObject(counts = rTO02.data, project = "rTO02", min.cells = 3, min.features = 200)
+
+rTO05.data <- Read10X(data.dir ="/data/rTO05filtered_feature_bc_matrix-4/")
+rTO05 <- CreateSeuratObject(counts = rTO05.data, project = "rTO05", min.cells = 3, min.features = 200)
+
+rCO01.data <- Read10X(data.dir ="/rCO01data/filtered_feature_bc_matrix/")
+rCO01 <- CreateSeuratObject(counts = rCO01.data, project = "rCO01", min.cells = 3, min.features = 200)
+
+rCO02.data <- Read10X(data.dir ="/data/rCO02filtered_feature_bc_matrix/")
+rCO02 <- CreateSeuratObject(counts = rCO02.data, project = "rCO02", min.cells = 3, min.features = 200)
+```
+
+***Aff %mt and %rb******
+```{r}
+
+apply(
+  CO80@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> CO80$Percent.Largest.Gene
+CO80[["percent.mt"]] <- PercentageFeatureSet(CO80, pattern = "^MT-")
+CO80[["percent.rb"]] <- PercentageFeatureSet(CO80, pattern = "^RP[SL]")
+
+apply(
+  CO82@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> CO82$Percent.Largest.Gene
+CO82[["percent.mt"]] <- PercentageFeatureSet(CO82, pattern = "^MT-")
+CO82[["percent.rb"]] <- PercentageFeatureSet(CO82, pattern = "^RP[SL]")
+apply(
+  TO68@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> TO68[["Percent.Largest.Gene"]] -> TO68$Percent.Largest.Gene
+TO68[["percent.mt"]] <- PercentageFeatureSet(TO68, pattern = "^MT-")
+TO68[["percent.rb"]] <- PercentageFeatureSet(TO68, pattern = "^RP[SL]")
+apply(
+  CO81@assays$RNA@counts,
+  2,
+  function(x)(100*max(x))/sum(x)
+) -> CO81[["Percent.Largest.Gene"]] -> CO81$Percent.Largest.Gene
+CO81[["percent.mt"]] <- PercentageFeatureSet(CO81, pattern = "^MT-")
+CO81[["percent.rb"]] <- PercentageFeatureSet(CO81, pattern = "^RP[SL]")
+```
+
+
+```{r}
+apply(
+    rTO02@assays$RNA@counts,
+    2,
+    function(x)(100*max(x))/sum(x)
+) -> rTO02$Percent.Largest.Gene
+rTO02[["percent.mt"]] <- PercentageFeatureSet(rTO02, pattern = "^MT")
+rTO02[["percent.rb"]] <- PercentageFeatureSet(rTO02, pattern = "^RP[SL]")
+
+apply(
+    rTO05@assays$RNA@counts,
+    2,
+    function(x)(100*max(x))/sum(x)
+) -> rTO02$Percent.Largest.Gene
+rTO05[["percent.mt"]] <- PercentageFeatureSet(rTO05, pattern = "^MT")
+rTO05[["percent.rb"]] <- PercentageFeatureSet(rTO05, pattern = "^RP[SL]")
+
+apply(
+    rCO01@assays$RNA@counts,
+    2,
+    function(x)(100*max(x))/sum(x)
+) -> rCO01$Percent.Largest.Gene
+rCO01[["percent.mt"]] <- PercentageFeatureSet(rCO01, pattern = "^MT")
+rCO01[["percent.rb"]] <- PercentageFeatureSet(rCO01, pattern = "^RP[SL]")
+
+apply(
+    rCO02@assays$RNA@counts,
+    2,
+    function(x)(100*max(x))/sum(x)
+) ->  rCO02$Percent.Largest.Gene
+rCO02[["percent.mt"]] <- PercentageFeatureSet(rCO02, pattern = "^MT")
+rCO02[["percent.rb"]] <- PercentageFeatureSet(rCO02, pattern = "^RP[SL]")
+```
+
+
+***Merge objects****
+```{r}
+hCOTO <- merge(CO80, y = c(TO68, CO82, CO81), project = "hCOTO", add.cell.ids = c("hTO.1", "hTO.2", "hTO.3", "hTO.4"))
+
+```
+
+****QC****
+```{r}
+VlnPlot(
+  object = hCOTO,
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+
+```
+
+
+```{r}
+subset(
+   hCOTO,
+     nFeature_RNA>2000 & 
+         nFeature_RNA < 10000 & nCount_RNA<150000 & nCount_RNA>500 &percent.mt < 25 & percent.mt > 2 & percent.rb >1)-> hCOTO.QC
+
+```
+
+
+```{r}
+subset(
+     rCO01,
+     nFeature_RNA> 2000 &
+         nFeature_RNA < 10000 &
+          nCount_RNA> 5000 &
+          percent.rb > 1 &
+            percent.mt < 2.5 & percent.mt > 0.1)-> rCO01
+subset(
+     rTO02,
+     nFeature_RNA> 2000 &
+         nFeature_RNA < 10000 &
+          nCount_RNA> 5000 &
+           percent.rb > 1 &
+           percent.mt < 1.5 & percent.mt > 0.1) -> rTO02
+subset(
+     rTO05,
+     nFeature_RNA> 2000 &
+         nFeature_RNA < 10000 &
+          nCount_RNA> 5000 &
+          percent.rb > 1 &
+          percent.mt < 0.5 & percent.mt > 0.1)-> rTO05
+subset(
+     rCO02,
+     nFeature_RNA> 200 &
+         nFeature_RNA < 10000 &
+          nCount_RNA> 6000 &
+          percent.rb > 1 &
+          percent.mt < 0.5 & percent.mt > 0.1)-> rCO02
+```
+
+
+```{r}
+VlnPlot(
+  object = rCO02, 
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+VlnPlot(
+  object = rCO01, 
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+VlnPlot(
+  object = rTO02, 
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+VlnPlot(
+  object = rTO05, 
+  features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+  ncol = 4,
+  pt.size = 0.5)
+```
+
+```{r}
+rCOTO <- merge(rTO02, y = c(rTO05, rCO01, rCO02), project = "rCOTO", add.cell.ids = c("rTO.1", "rTO.2", "rTO.3", "rTO.4"))
+```
+
+
+```{r}
+VlnPlot(
+    object = rCOTO,
+    features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+    ncol = 4,
+    pt.size = 0.5)
+VlnPlot(
+    object = hCOTO.QC,
+    features = c("nCount_RNA", "nFeature_RNA", "percent.mt", "percent.rb"),
+    ncol = 4,
+    pt.size = 0.5)
+```
+
+
+***Assign %X-linked and %Y-linked genes for later regression*****
+```{r}
+library(biomaRt)
+mart <- useMart("ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl")
+genes.table <- try(biomaRt::getBM(attributes = c("ensembl_gene_id", "external_gene_name",
+        "description", "gene_biotype", "chromosome_name", "start_position"), mart = mart,
+        useCache = F))
+
+
+genes.table <- genes.table[genes.table$external_gene_name %in% rownames(hCOTO.QC),
+]
+
+chrY.gene = genes.table$external_gene_name[genes.table$chromosome_name == "Y"]
+hCOTO.QC$pct_chrY = colSums(hCOTO.QC@assays$RNA@counts[chrY.gene, ])/colSums(hCOTO.QC@assays$RNA@counts)
+chrX.gene = genes.table$external_gene_name[genes.table$chromosome_name == "X"]
+hCOTO.QC$pct_chrX = colSums(hCOTO.QC@assays$RNA@counts[chrX.gene, ])/colSums(hCOTO.QC@assays$RNA@counts)
+
+
+```
+
+
+```{r}
+
+VlnPlot(hCOTO.QC, features = c("pct_chrX", "pct_chrY"))
+
+FeatureScatter(hCOTO.QC, feature1 = "pct_chrX", feature2 = "pct_chrY")
+```
+
+
+```{r}
+library(biomaRt)
+mart <- useMart("ENSEMBL_MART_ENSEMBL", dataset = "mmulatta_gene_ensembl")
+genes.table <- try(biomaRt::getBM(attributes = c("ensembl_gene_id", "external_gene_name", "description", "gene_biotype", "chromosome_name", "start_position"), mart = mart, useCache = F))
+genes.table <- genes.table[genes.table$external_gene_name %in% rownames(rCOTO),
+]
+chrY.gene = genes.table$external_gene_name[genes.table$chromosome_name == "Y"]
+rCOTO$pct_chrY = colSums(rCOTO@assays$RNA@counts[chrY.gene, ])/colSums(rCOTO@assays$RNA@counts)
+FeatureScatter(rCOTO, feature1 = "BEX1", feature2 = "pct_chrY")
+VlnPlot(rCOTO, features = c("BEX1", "pct_chrY"))
+```
+
+```{r}
+VlnPlot(rCOTO, features = c("BEX1", "pct_chrY"))
+```
+
+
+***Remove MALAT1 from dataset***
+```{r}
+hCOTO.QC <- hCOTO.QC[!grepl("MALAT1", rownames(hCOTO.QC)), ]
+```
+
+
+***SCT v2 and Integration****
+```{r}
+hCOTO.list <- SplitObject(hCOTO.QC)
+hCOTO.list <- lapply(X = hCOTO.list, FUN = SCTransform, assay = 'RNA', new.assay.name = 'SCT',  vars.to.regress = c('percent.mt', 'nFeature_RNA', 'nCount_RNA', 'percent.rb', 'pct_chrX', 'pct_chrY'), vst.flavor = "v2")
+
+hCOTOfeatures <- SelectIntegrationFeatures(object.list = hCOTO.list, nfeatures = 3000)
+```
+
+```{r}
+rCOTO.list <- SplitObject(rCOTO)
+rCOTO.list <- lapply(X = rCOTO.list, FUN = SCTransform, assay = 'RNA', new.assay.name = 'SCT',  vars.to.regress = c('percent.mt', 'nFeature_RNA', 'nCount_RNA', 'percent.rb', 'pct_chrY'), vst.flavor = "v2")
+
+rCOTOfeatures <- SelectIntegrationFeatures(object.list = rCOTO.list, nfeatures = 3000)
+```
+
+
+```{r}
+library(harmony)
+library(scCustomize)
+hCOTO.merge <-Merge_Seurat_List(
+ hCOTO.list,
+  add.cell.ids = NULL,
+  merge.data = TRUE,
+  project = "hCOTOmerged"
+)
+rCOTO.merge <-Merge_Seurat_List(
+ rCOTO.list,
+  add.cell.ids = NULL,
+  merge.data = TRUE,
+  project = "rCOTOmerged"
+)
+VariableFeatures(hCOTO.merge) <- hCOTOfeatures
+VariableFeatures(rCOTO.merge) <- rCOTOfeatures
+
+hCOTO.merge <- RunPCA(hCOTO.merge, assay = "SCT", npcs = 50, group.by.vars="orig.ident")
+rCOTO.merge <- RunPCA(rCOTO.merge, assay = "SCT", npcs = 50, group.by.vars="orig.ident")
+hCOTO.harm <- RunHarmony(hCOTO.merge, 
+                        group.by.vars = "orig.ident", 
+                        reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+rCOTO.harm <- RunHarmony(rCOTO.merge, 
+                        group.by.vars = "orig.ident", 
+                        reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+```
+
+```{r}
+ElbowPlot(hCOTO.harm, reduction = "pca", ndims = 50)
+ElbowPlot(rCOTO.harm, reduction = "pca", ndims = 50)
+```
+
+```{r}
+hCOTO.harm  <- RunUMAP(hCOTO.harm , reduction = "harmony", assay = "SCT", dims = 1:30)
+hCOTO.harm  <- FindNeighbors(hCOTO.harm, reduction = "harmony")
+DefaultAssay(hCOTO.harm)  <- "SCT"
+
+rCOTO.harm  <- RunUMAP(rCOTO.harm , reduction = "harmony", assay = "SCT", dims = 1:30)
+rCOTO.harm  <- FindNeighbors(rCOTO.harm, reduction = "harmony")
+DefaultAssay(rCOTO.harm)  <- "SCT"
+```
+
+```{r}
+hCOTO.harm <- FindClusters(hCOTO.harm, reduction = "harmony", resolution = 0.3)
+rCOTO.harm <- FindClusters(rCOTO.harm, reduction = "harmony", resolution = 0.3)
+```
+
+
+```{r}
+DimPlot(hCOTO.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(hCOTO.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label=T,
+        label.size = 5)
+```
+
+
+```{r}
+DimPlot(rCOTO.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(rCOTO.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label=T,
+        label.size = 5)
+```
+
+```{r}
+saveRDS(hCOTO.harm, file = "hCOTO.harm.FINAL.2.14.24.rds")
+saveRDS(rCOTO.harm, file = "rCOTO.harm.FINAL.2.2.24.rds")
+```
+
+
+```{r}
+rCOTO.harm <- readRDS("/data/rCOTO.harm.FINAL.2.2.24.rds")
+hCOTO.harm <- readRDS("data/hCOTO.harm.FINAL.2.14.24.rds")
+```
+
+*ALRA*
+```{r}
+
+DefaultAssay(hCOTO.harm)  <- "SCT"
+hCOTO.harm <- RunALRA(hCOTO.harm, setDelfaultAssay=FALSE)
+DefaultAssay(hCOTO.harm)  <- "RNA"
+hCOTO.harm <- NormalizeData(hCOTO.harm, verbose = FALSE)
+hCOTO.harm <- ScaleData(hCOTO.harm, verbose = TRUE)
+
+DefaultAssay(rCOTO.harm)  <- "SCT"
+rCOTO.harm <- RunALRA(rCOTO.harm, setDelfaultAssay=FALSE)
+DefaultAssay(rCOTO.harm)  <- "RNA"
+rCOTO.harm <- NormalizeData(rCOTO.harm, verbose = FALSE)
+rCOTO.harm <- ScaleData(rCOTO.harm, verbose = TRUE)
+
+
+saveRDS(rCOTO.harm, file = "rCOTO.ALRA.harm.2.13.24.rds")
+saveRDS(hCOTO.int.ALRA, file = "hCOTO.harm.ALRA.2.13.24.rds")
+```
+
+```{r}
+ rhesusmarkers <- FindAllMarkers(rCOTO.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+humanmarkers <- FindAllMarkers(hCOTO.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+
+***Name clusters***
+```{r}
+print(levels(hCOTO.harm))
+cluster.ids <- c("CTBp-1",
+"CTBp-2",
+"CTB-1",
+"CTB-2",
+"STB")
+
+names(cluster.ids) <- levels(hCOTO.harm)
+hCOTO.harm <- RenameIdents(hCOTO.harm, cluster.ids)
+print(levels(hCOTO.harm))
+```
+```{r}
+cluster.ids.new <- c("CTB-1",
+"CTBp-1",
+"CTBp-2",
+"CTB-2",
+"STB")
+names(cluster.ids.new) <- levels(rCOTO.harm)
+rCOTO.harm <- RenameIdents(rCOTO.harm, cluster.ids.new)
+```
+
+
+```{r}
+DimPlot(rCOTO.harm, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+
+
+DimPlot(hCOTO.harm, reduction = "umap", label.size = 6,pt.size = 2, label=T, cols = c("CTB-1"= "#1e1eff", "CTB-2"= "#75abef", "CTBP-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+
+#To remove labels on graph for figures
+DimPlot(rCOTO.harm, reduction = "umap",pt.size = 2, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+
+
+DimPlot(hCOTO.harm, reduction = "umap", pt.size = 2, cols =c("CTB-1"= "#1e1eff", "CTB-2"= "#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+
+```
+
+```{r}
+#UMAP separated by samples 
+ DimPlot(hCOTO.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label.size = 6, cols =c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+
+DimPlot(rCOTO.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label=T, label.size = 6, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+```
+
+
+```{r}
+print(levels(rCOTO.harm))
+cluster.ids <- c("CTB-1",
+"CTBp-1",
+"CTBp-2",
+"CTB-2",
+"STB")
+
+names(cluster.ids) <- levels(rCOTO.harm)
+rCOTO.harm <- RenameIdents(rCOTO.harm, cluster.ids)
+print(levels(rCOTO.harm))
+```
+
+```{r}
+print(levels(hCOTO.harm))
+cluster.ids <- c("CTB-1",
+"CTBp-1",
+"CTBp-2",
+"CTB-2",
+"STB")
+
+names(cluster.ids) <- levels(hCOTO.harm)
+hCOTO.harm <- RenameIdents(hCOTO.harm, cluster.ids)
+print(levels(hCOTO.harm))
+```
+
+```{r}
+pt <- table(Idents(hCOTO.harm), (hCOTO.harm$orig.ident))
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+
+hproportion <- ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF")) +
+  theme(legend.title = element_blank())
+  
+hproportion + coord_flip()
+```
+
+```{r}
+pt <- table(Idents(rCOTO.harm), (rCOTO.harm$orig.ident))
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+
+rhproportion <- ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF")) +
+  theme(legend.title = element_blank())
+```
+
+```{r}
+#Dotplot Markers
+rSTB=c("TFAP2A", "INSL4", "HOPX", "CGA", "ERVFRD-1", "ENSMMUG00000039210", "ENSMMUG00000050799", "ENSMMUG00000047533", "MMP2")
+rCGBs=c('ENSMMUG00000040968', 'ENSMMUG00000063643', 'ENSMMUG00000049714')
+rPSGs=c("ENSMMUG00000039210", "ENSMMUG00000050799", "ENSMMUG00000047533")
+hCGBs=c("CGB1","CGB2","CGB3","CGB5","CGB7","CGB8")
+hPSGs=c("PSG1","PSG2","PSG3","PSG4","PSG5","PSG6","PSG7","PSG8","PSG9","PSG11")
+
+CGBsandPSGs=c(hCGBs, rCGBs, hPSGs, rPSGs)
+
+rCTB=c("CDH1", "KRT7")
+rEVT=c("NOTCH2", "GRHL1", "NCAM1")
+MAMU=c("MAMU-A", "MAMU-E", "MAMU-AG")
+Prolif=c("MKI67", "CCNA2", "PCNA", "TOP2A")
+
+rall=c(rSTB, rCGBs, rCTB, rEVT, MAMU, Prolif)
+
+STBandhCGBs=c("CGB1","CGB2","CGB3","CGB5","CGB7","CGB8", "SDC1",'PSG3', 'PSG6', 'PSG9', 'CYP19A1')
+STB=c("SDC1", "CGB3", "CGB7",'PSG3', 'PSG6', 'PSG9', 'CYP19A1')
+preSTB=c('ERVV-1', "ERVW-1", 'ERVE-1', 'ERVV-2')
+EVT=c('HLA-G', 'ITGA5', 'ITGB1', 'HSPG2', 'SMAD3')
+CTB=c('PAGE4','PEG3', 'PEG10', 'MEST', 'SMAGP', 'SLC27A2')
+
+hall=c(STB, preSTB, CTB, EVT, Prolif)
+
+both=c(rSTB, hCGBs, STB, preSTB, rCTB, CTB, EVT, rEVT, Prolif)
+
+bothEVT=c(rEVT, EVT)
+combineddotplot=c("TFAP2A", "INSL4", "HOPX", "CGA", "ERVFRD-1", "SDC1", 'CYP19A1', "CDH1", "KRT7", 'PAGE4','PEG3', 'PEG10', "MKI67", "CCNA2", "PCNA", "TOP2A")
+
+allmarkers=c(rSTB, STBandhCGBs, preSTB, rCTB, CTB, EVT, rEVT, Prolif)
+```
+
+
+```{r}
+#Dotplots
+DefaultAssay(rCOTO.harm)  <- "alra"
+rdotplot <- DotPlot(rCOTO.harm, features = rall, dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+rdotplot
+
+DefaultAssay(hCOTO.harm)  <- "alra"
+hdotplot <- DotPlot(hCOTO.harm, features = hall, dot.scale = 12, scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) +  scale_color_gradientn(colors = (brewer.pal(n = 11, name = "OrRd"))) +guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+hdotplot
+```
+
+
+```{r}
+#Feature Plots
+
+plot10 <- FeaturePlot(rCOTO.harm, reduction = "umap", pt.size = 1, feature = c("MKI67"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#FF7300"))
+plot10
+
+plot11 <- FeaturePlot(hCOTO.harm, reduction = "umap", pt.size = 1, feature = c("MKI67"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#FF7300"))
+plot11
+
+plot12 <- FeaturePlot(rCOTO.harm, reduction = "umap", pt.size = 1, feature = c("CDH1"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#1e1eff"))
+plot12
+
+plot13 <- FeaturePlot(hCOTO.harm, reduction = "umap", pt.size = 1, feature = c("SMAGP"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#1e1eff"))
+plot13
+
+plot14 <- FeaturePlot(rCOTO.harm, reduction = "umap", pt.size = 1, feature = c("HOPX"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#F64DFF"))
+plot14
+
+plot15 <- FeaturePlot(rCOTO.harm, reduction = "umap", pt.size = 1, feature = c("ERVFRD-1"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#F64DFF"))
+plot15
+
+plot16 <- FeaturePlot(hCOTO.harm, reduction = "umap", pt.size = 1, feature = c("HOPX"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#F64DFF"))
+plot16
+
+plot17 <- FeaturePlot(hCOTO.harm, reduction = "umap", pt.size = 1, feature = c("CYP19A1"), min.cutoff = "q1", max.cutoff = "q99", ncol=2, cols = c("grey", "#F64DFF"))
+plot17
+
+```
+
+```{r}
+```{r}
+###Merge Human and Rhesus###
+```{r}
+hCOTO.harm$stim <- "human"
+rCOTO.harm$stim <- "rhesus"
+HumanvsRhesus <- merge(hCOTO.harm, y = c(rCOTO.harm), project = "HumanvsRhesus")
+VariableFeatures(HumanvsRhesus[["SCT"]]) <- rownames(HumanvsRhesus[["SCT"]]@scale.data)
+HumanvsRhesus.harm <- RunPCA(HumanvsRhesus, assay = "SCT", npcs = 50, group.by.vars="stim")
+```
+
+```{r}
+library(harmony)
+test2 <- RunHarmony(HumanvsRhesus.harm, 
+                     group.by.vars = "stim", 
+                     reduction = "pca", assay.use = "SCT", reduction.save = "harmony")
+```
+
+```{r}
+ElbowPlot(test2, reduction = "pca", ndims = 50)
+HumanvsRhesus.harm  <- RunUMAP(test2 , reduction = "harmony", assay = "SCT", dims = 1:40)
+HumanvsRhesus.harm  <- FindNeighbors(HumanvsRhesus.harm, reduction = "harmony")
+DefaultAssay(HumanvsRhesus.harm)  <- "SCT"
+HumanvsRhesus.harm <- FindClusters(HumanvsRhesus.harm, reduction = "harmony", resolution = 0.3)
+```
+
+```{r}
+DimPlot(HumanvsRhesus.harm, reduction = "umap", pt.size = 1, label.size = 5, label=T)
+DimPlot(HumanvsRhesus.harm, reduction = "umap", split.by="stim", pt.size = 1, label=T,
+         label.size = 5)
+         
+DimPlot(HumanvsRhesus.harm, reduction = "umap", split.by="orig.ident", pt.size = 1, label=T,
+         label.size = 6, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+```
+
+```{r}
+print(levels(HumanvsRhesus.harm))
+cluster.ids <- c("CTBp-1",
+                  "CTBp-2",
+                  "CTB-1",
+                  "CTB-2",
+                  "STB")
+ 
+names(cluster.ids) <- levels(HumanvsRhesus.harm)
+HumanvsRhesus.harm <- RenameIdents(HumanvsRhesus.harm, cluster.ids)
+```
+
+```{r}
+plot18 <- DimPlot(HumanvsRhesus.harm, reduction = "umap",pt.size = 2, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"))
+plot19 <- DimPlot(HumanvsRhesus.harm, reduction = "umap",pt.size = 2, cols = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF"), split.by="stim")
+```
+
+```{r}
+pt <- table(Idents(HumanvsRhesus.harm), (HumanvsRhesus.harm$orig.ident))
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+
+hrproportion <- ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+     theme_bw(base_size = 15) +
+     geom_col(position = "fill", width = 0.5) +
+    xlab("Sample") +
+    ylab("Proportion") +
+     scale_fill_manual(values = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF")) +
+    theme(legend.title = element_blank())+   scale_x_discrete(limits=c('rCO01', 'rCO02', 'rTO02', 'rTO05', 'CO80', 'TO68', 'CO81', 'CO82'))
+    
+
+#Combined proportion plot for human vs rhesus as stim
+pt <- table(Idents(HumanvsRhesus.harm), (HumanvsRhesus.harm$stim))
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+
+hrproportion <- ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+     theme_bw(base_size = 15) +
+     geom_col(position = "fill", width = 0.5) +
+    xlab("Sample") +
+    ylab("Proportion") +
+     scale_fill_manual(values = c("CTB-1"= "#1e1eff", "CTB-2"="#75abef", "CTBp-1"= "#FF7300", "CTBp-2"= "#FFE926", "STB"= "#F64DFF")) +
+    theme(legend.title = element_blank())   
+```
+
+
+```{r}
+rhesusandhumanmarkers <- FindAllMarkers(HumanvsRhesus.harm, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+
+```{r}
+### Separate HumanvsRhesus.harm by stim (human and rhesus)
+
+head(HumanvsRhesus.harm@meta.data)
+
+unique_stims <- unique(HumanvsRhesus.harm$stim)
+seurat_list <- list()
+for (stim_value in unique_stims) {
+  seurat_list[[stim_value]] <- subset(HumanvsRhesus.harm, subset = stim == stim_value)
+}
+HumanvsRhesus.harm_human <- seurat_list[["stim1"]]
+HumanvsRhesus.harm_rhesus <- seurat_list[["stim2"]]
+HumanvsRhesus.harm_human <- subset(HumanvsRhesus.harm,   subset = (stim == "human" | stim == "human" | stim == "human"))
+HumanvsRhesus.harm_rhesus <- subset(HumanvsRhesus.harm, subset = (stim == "rhesus" | stim == "rhesus" | stim == "rhesus"))
+
+HumanvsRhesus.harm_humanmarkers <- FindAllMarkers(HumanvsRhesus.harm_human, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+HumanvsRhesus.harm_rhesusmarkers <- FindAllMarkers(HumanvsRhesus.harm_rhesus, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+```
+
+```{r}
+#HumanvsRhesus Dotplot
+DefaultAssay(HumanvsRhesus.harm)  <- "alra"
+rhdotplot <- DotPlot(HumanvsRhesus.harm, features = CGBsandPSGs, cols = c("#0000FF", "#FB0207"), dot.scale = 14, split.by = "stim", scale = T, col.min = 0, col.max = 1) + theme(legend.direction = "vertical")+   theme(legend.position="bottom")+ theme(legend.title = element_text(color = "black", size = 10), legend.text = element_text(color = "black", size = 10))+ theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + theme(legend.key.height= unit(0.45, 'cm'), legend.key.width= unit(0.5, 'cm')) + guides(col = guide_colourbar(title = "Mean expression")) + labs(size="% cells") + RotatedAxis() +     geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5)  +guides(size=guide_legend(override.aes=list(shape=21, colour="black", fill="white")))
+rhdotplot
+
+```
+
+```{r}
+#Pseudobulk
+# Assuming you have already loaded and processed your single-cell data into a Seurat object named 'scdata'
+
+# Identify clusters in your dataset
+rhCOTO.harm <- HumanvsRhesus.harm
+scdata<- FindClusters(rhCOTO.harm, resolution = 0.3)
+
+# Calculate the average expression for each gene within each cluster
+cluster_means <- sapply(unique(Idents(scdata)), function(cluster_id) {
+  cluster_data <- subset(scdata, idents = cluster_id)
+  rowMeans(GetAssayData(cluster_data))
+})
+
+# Add cell names to the matrix
+colnames(cluster_means) <- c("CTBp-1",
+"CTBp-2",
+"CTB",
+"EVT",
+"STB")
+
+
+# Create a new Seurat object to store the pseudobulk expression profiles
+pseudobulk <- CreateSeuratObject(counts = cluster_means, assay = "RNA", meta.data = data.frame(cluster_means))
+
+# Optionally, perform differential expression analysis between clusters
+PrepSCTFindMarkers(pseudobulk)  #Prepare the object for differential expression analysis
+de_results <- FindMarkers(pseudobulk, ident.1 = 0, ident.2 = 1)
+
+# Optionally, perform differential expression analysis between clusters
+de_results <- FindMarkers(scdata, ident.1 = 0, ident.2 = 1)
+
+
+# Optional: Perform differential expression analysis between clusters
+de_results <- FindMarkers(pseudobulk, ident.1 = 0, ident.2 = 1)
+
+# Plot pseudobulk expression profiles
+DoHeatmap(pseudobulk, features = top DE genes, group.by = "ident")
+```
+```
+
+
+
+
+```{r}
+avg.hCOTO.harm.All <- as.data.frame(AggregateExpression(hCOTO.harm, group.by = 'orig.ident', assays = 'SCT',  slot = 'count', verbose = FALSE))
+colnames(avg.hCOTO.harm.All) <- gsub("RNA.","",colnames(avg.hCOTO.harm.All))
+avg.hCOTO.harm.All$gene <- rownames(avg.hCOTO.harm.All)
+
+cts <- avg.hCOTO.harm.All[,1:(ncol(avg.hCOTO.harm.All)-1)]
+coldata <- data.frame(Sample = colnames(avg.hCOTO.harm.All[,1:(ncol(avg.hCOTO.harm.All)-1)]),
+                      Condition = c("Human",
+                                    "Human",
+                                    "Human",
+                                    "Human"
+                                  ))
+
+avg.hCOTO.harm.All.dds <- DESeqDataSetFromMatrix(countData=cts,
+                                  colData=coldata,
+                                  design=~Condition)
+
+avg.HumanvsRhesus.harm.All.dds <- DESeq(avg.HumanvsRhesus.harm.All.dds)
+
+avg.HumanvsRhesus.harm.All.dds <- results(avg.HumanvsRhesus.harm.All.dds,contrast = c("Condition","Rhesus","Human"))
+
+
+write.csv(avg.HumanvsRhesus.harm.All.dds, file="avg.Rhesus vs Human.dds.Res.3.13.24.csv")
+```
+
+### Perform Pseudobulk on all clusters in a seurat object
+```{r}
+library(DESeq2)
+
+avg.HumanvsRhesus.harm.All <- as.data.frame(AggregateExpression(HumanvsRhesus.harm, group.by = 'orig.ident', assays = 'SCT',  slot = 'count', verbose = FALSE))
+colnames(avg.HumanvsRhesus.harm.All) <- gsub("RNA.","",colnames(avg.HumanvsRhesus.harm.All))
+avg.HumanvsRhesus.harm.All$gene <- rownames(avg.HumanvsRhesus.harm.All)
+
+cts <- avg.HumanvsRhesus.harm.All[,1:(ncol(avg.HumanvsRhesus.harm.All)-1)]
+coldata <- data.frame(Sample = colnames(avg.HumanvsRhesus.harm.All[,1:(ncol(avg.HumanvsRhesus.harm.All)-1)]),
+                      Condition = c("Human",
+                                    "Human",
+                                    "Human",
+                                    "Rhesus",
+                                    "Rhesus",
+                                    "Rhesus",
+                                    "Rhesus",
+                                    "Human"
+                                  ))
+
+avg.HumanvsRhesus.harm.All.dds <- DESeqDataSetFromMatrix(countData=cts,
+                                  colData=coldata,
+                                  design=~Condition)
+
+avg.HumanvsRhesus.harm.All.dds <- DESeq(avg.HumanvsRhesus.harm.All.dds)
+
+avg.HumanvsRhesus.harm.All.dds <- results(avg.HumanvsRhesus.harm.All.dds,contrast = c("Condition","Rhesus","Human"))
+
+
+write.csv(avg.HumanvsRhesus.harm.All.dds, file="avg.Rhesus vs Human.dds.Res.3.13.24.csv")
+```
+
+```{r}
+
+Apply.Thresholds.to.DESeq2 <- function(InputDir, ResultsDir, log2.fc, padj) {
+  dir.create(ResultsDir, showWarnings = FALSE)
+  FilesNames <- list.files(InputDir)
+  for (i in 1:length(FilesNames)){
+    setwd(InputDir)
+    DESeqData <- read.table(FilesNames[i], as.is=TRUE, na.strings=c(NA, "NA", " NA"))
+    DESeqData <- DESeqData[abs(DESeqData$log2FoldChange) > log2.fc,]
+    DESeqData <- DESeqData[DESeqData$padj < padj,]
+    DESeqData <- DESeqData[complete.cases(DESeqData),]
+    DESeqData <- DESeqData[order(DESeqData$log2FoldChange),]
+    na.omit(DESeqData)
+    setwd(ResultsDir)
+    write.table(as.data.frame(DESeqData), file = paste(sub(".txt","",FilesNames[i]),"_Sig.txt", sep = ""), sep="\t")
+  }
+}
+```
+
+#####GO ENRICHMENT
+```{r setup, include=FALSE}
+***Go analysis***
+```{r}
+#BiocManager::install("org.Mmu.eg.db")
+library(org.Mmu.eg.db)
+#BiocManager::install("org.Hs.eg.db")
+library(org.Hs.eg.db)
+#BiocManager::install('clusterProfiler')
+library(clusterProfiler)
+```
+
+
+```{r}
+ fill_limits <- c(0, 0.05) 
+size_limits <- c(0, 100)
+
+rTO_cluster_markers <- rCOTO.harm.markers
+rCOTO.harm.markers <- FindAllMarkers(object = rCOTO.harm, thresh.use = 0.25, min.pct = 0.25, only.pos = TRUE)
+hCOTO.harm.markers <- FindAllMarkers(object = hCOTO.harm, thresh.use = 0.25, min.pct = 0.25, only.pos = TRUE)
+rhCOTO.harm.markers <- FindAllMarkers(object = HumanvsRhesus.harm, thresh.use = 0.25, min.pct = 0.25, only.pos = TRUE)
+```
+
+
+```{r}
+rTO_go_results <- lapply(unique(rTO_cluster_markers$cluster), function(cluster) {
+    genes <- rTO_cluster_markers %>% filter(cluster == !!cluster) %>% pull(gene)
+    # Perform GO enrichment analysis
+    rTOego <- enrichGO(gene          = genes,
+                       OrgDb         = org.Mmu.eg.db,
+                       keyType       = "SYMBOL",
+                       ont           = "MF",  
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05)
+    return(rTOego)
+})
+```
+```{r}
+names(rTO_go_results) <- unique(rTO_cluster_markers$cluster)
+```
+```{r}
+extract_go_results <- function(go_list) {
+    combined_results <- lapply(names(go_list), function(cluster) {
+        enrich_result <- go_list[[cluster]]
+        if (!is.null(enrich_result) && nrow(enrich_result@result) > 0) {
+            df <- as.data.frame(enrich_result@result)
+            df$Cluster <- cluster
+            return(df)
+        } else {
+            return(NULL)
+        }
+    })
+    # Remove NULL entries
+    combined_results <- combined_results[!sapply(combined_results, is.null)]
+    if (length(combined_results) > 0) {
+        combined_results <- as.data.frame(combined_results)  # Ensure it's a data frame
+    } else {
+        combined_results <- data.frame()
+    }
+    return(combined_results)
+}
+# Extract and combine GO results
+combined_go_results <- extract_go_results(rTO_go_results)
+```
+```{r}
+ # Filter for significant results
+    combined_go_results <- combined_go_results %>% filter(p.adjust < 0.05)
+```
+```{r}
+top10_per_cluster <- combined_go_results %>%
+    group_by(Cluster) %>%
+    slice_min(order_by = p.adjust, n = 10) %>%
+    ungroup()
+```
+```{r}
+ # Reorder pathways by cluster
+    unique_pathways <- top10_per_cluster %>%
+        arrange(Cluster, p.adjust) %>%
+        mutate(Description = factor(Description, levels = unique(Description)))
+```
+***Turbo color***
+```{r}
+rTOplot_MF <- ggplot(unique_pathways, aes(x = Cluster, y = Description)) +
+    geom_point(aes(size = Count, fill = p.adjust), shape = 21, color = "black", stroke = 0.5) +
+    scale_fill_viridis_c(option = "turbo", direction = -1, limits = c(fill_limits)) +  # Set fill color scale limits
+    scale_size_continuous(range = c(1, 7), limits = size_limits) +  # Set size scale limits
+    theme_minimal() +
+    theme(
+        panel.background = element_rect(fill = "grey99", color = NA),  # Light grey background
+        panel.grid.major = element_line(color = "grey60", linewidth = 0.5),  # Grey major grid lines
+        panel.grid.minor = element_line(color = "grey60"),  # Grey minor grid lines
+        panel.border = element_rect(color = "black", fill = NA, size = 1),  # Black border around the panel
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels
+    ) +
+    labs(x = "Cluster",
+         y = "GO Term",
+         fill = "Adjusted p-value",  # Update to fill
+         size = "Gene Count")
+```
+
+```{r}
+#Human
+hTO_cluster_markers <- hCOTO.harm.markers
+hTO_go_results <- lapply(unique(hTO_cluster_markers$cluster), function(cluster) {
+    genes <- hTO_cluster_markers %>% filter(cluster == !!cluster) %>% pull(gene)
+    # Perform GO enrichment analysis
+    hTOego <- enrichGO(gene          = genes,
+                       OrgDb         = org.Hs.eg.db,
+                       keyType       = "SYMBOL",
+                       ont           = "MF",  
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05)
+    return(hTOego)
+})
+```
+```{r}
+names(hTO_go_results) <- unique(hTO_cluster_markers$cluster)
+```
+```{r}
+extract_go_results <- function(go_list) {
+    combined_results <- lapply(names(go_list), function(cluster) {
+        enrich_result <- go_list[[cluster]]
+        if (!is.null(enrich_result) && nrow(enrich_result@result) > 0) {
+            df <- as.data.frame(enrich_result@result)
+            df$Cluster <- cluster
+            return(df)
+        } else {
+            return(NULL)
+        }
+    })
+    # Remove NULL entries
+    combined_results <- combined_results[!sapply(combined_results, is.null)]
+    if (length(combined_results) > 0) {
+        combined_results <- do.call(rbind, combined_results)
+        combined_results <- as.data.frame(combined_results)  # Ensure it's a data frame
+    } else {
+        combined_results <- data.frame()
+    }
+    return(combined_results)
+}
+# Extract and combine GO results
+combined_go_results <- extract_go_results(hTO_go_results)
+```
+```{r}
+ # Filter for significant results
+    combined_go_results <- combined_go_results %>% filter(p.adjust < 0.05)
+```
+```{r}
+top10_per_cluster <- combined_go_results %>%
+    group_by(Cluster) %>%
+    slice_min(order_by = p.adjust, n = 10) %>%
+    ungroup()
+```
+```{r}
+# Reorder pathways by cluster
+    unique_pathways <- top10_per_cluster %>%
+        arrange(Cluster, p.adjust) %>%
+        mutate(Description = factor(Description, levels = unique(Description)))
+```
+
+
+```{r}
+hTOplot_MF <-ggplot(unique_pathways, aes(x = Cluster, y = Description)) +
+    geom_point(aes(size = Count, fill = p.adjust), shape = 21, color = "black", stroke = 0.5) +
+    scale_fill_viridis_c(option = "turbo", direction = -1, limits = c(fill_limits)) +  # Set fill color scale limits
+    scale_size_continuous(range = c(1, 7), limits = size_limits) +  # Set size scale limits
+    theme_minimal() +
+    theme(
+        panel.background = element_rect(fill = "grey99", color = NA),  # Light grey background
+        panel.grid.major = element_line(color = "grey60", linewidth = 0.5),  # Grey major grid lines
+        panel.grid.minor = element_line(color = "grey60"),  # Grey minor grid lines
+        panel.border = element_rect(color = "black", fill = NA, size = 1),  # Black border around the panel
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels
+    ) +
+    labs(x = "Cluster",
+         y = "GO Term",
+         fill = "Adjusted p-value",  # Update to fill
+         size = "Gene Count")
+```
+
+```{r}
+#Separated rhesus and human cr
+crTO_cluster_markers <- HumanvsRhesus.harm_rhesus.markers
+crTO_go_results <- lapply(unique(crTO_cluster_markers$cluster), function(cluster) {
+    genes <- crTO_cluster_markers %>% filter(cluster == !!cluster) %>% pull(gene)
+    # Perform GO enrichment analysis
+    crTOego <- enrichGO(gene          = genes,
+                       OrgDb         = org.Mmu.eg.db,
+                       keyType       = "SYMBOL",
+                       ont           = "MF",  
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05)
+    return(crTOego)
+})
+```
+```{r}
+names(crTO_go_results) <- unique(crTO_cluster_markers$cluster)
+
+extract_go_results <- function(go_list) {
+    combined_results <- lapply(names(go_list), function(cluster) {
+        enrich_result <- go_list[[cluster]]
+        if (!is.null(enrich_result) && nrow(enrich_result@result) > 0) {
+            df <- as.data.frame(enrich_result@result)
+            df$Cluster <- cluster
+            return(df)
+        } else {
+            return(NULL)
+        }
+    })
+    # Remove NULL entries
+    combined_results <- combined_results[!sapply(combined_results, is.null)]
+    if (length(combined_results) > 0) {
+        combined_results <- do.call(rbind, combined_results)
+        combined_results <- as.data.frame(combined_results)  # Ensure it's a data frame
+    } else {
+        combined_results <- data.frame()
+    }
+    return(combined_results)
+}
+# Extract and combine GO results
+combined_go_results <- extract_go_results(crTO_go_results)
+
+ # Filter for significant results
+combined_go_results <- combined_go_results %>% filter(p.adjust < 0.05)
+
+top10_per_cluster <- combined_go_results %>%
+    group_by(Cluster) %>%
+    slice_min(order_by = p.adjust, n = 10) %>%
+    ungroup()
+
+# Reorder pathways by cluster
+    unique_pathways <- top10_per_cluster %>%
+        arrange(Cluster, p.adjust) %>%
+        mutate(Description = factor(Description, levels = unique(Description)))
+```
+ fill_limits <- c(0, 0.05) 
+size_limits <- c(0, 100)
+```{r}
+crTOplot_MF <-ggplot(unique_pathways, aes(x = Cluster, y = Description)) +
+    geom_point(aes(size = Count, fill = p.adjust), shape = 21, color = "black", stroke = 0.5) +
+    scale_fill_viridis_c(option = "turbo", direction = -1, limits = c(fill_limits)) +  # Set fill color scale limits
+    scale_size_continuous(range = c(1, 7), limits = size_limits) +  # Set size scale limits
+    theme_minimal() +
+    theme(
+        panel.background = element_rect(fill = "grey99", color = NA),  # Light grey background
+        panel.grid.major = element_line(color = "grey60"),  # Grey major grid lines
+        panel.grid.minor = element_line(color = "grey60"),  # Grey minor grid lines
+        panel.border = element_rect(color = "black", fill = NA, size = 1),  # Black border around the panel
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels
+    ) +
+    labs(x = "Cluster",
+         y = "GO Term",
+         fill = "Adjusted p-value",  # Update to fill
+         size = "Gene Count")
+```
+```
+
+
+
+
+```{r}
+#Separated rhesus and human cr
+chTO_cluster_markers <- HumanvsRhesus.harm_human.markers
+chTO_go_results <- lapply(unique(chTO_cluster_markers$cluster), function(cluster) {
+    genes <- chTO_cluster_markers %>% filter(cluster == !!cluster) %>% pull(gene)
+    # Perform GO enrichment analysis
+    chTOego <- enrichGO(gene          = genes,
+                       OrgDb         = org.Hs.eg.db,
+                       keyType       = "SYMBOL",
+                       ont           = "BP",  
+                       pAdjustMethod = "BH",
+                       pvalueCutoff  = 0.05,
+                       qvalueCutoff  = 0.05)
+    return(chTOego)
+})
+```
+```{r}
+names(chTO_go_results) <- unique(chTO_cluster_markers$cluster)
+
+extract_go_results <- function(go_list) {
+    combined_results <- lapply(names(go_list), function(cluster) {
+        enrich_result <- go_list[[cluster]]
+        if (!is.null(enrich_result) && nrow(enrich_result@result) > 0) {
+            df <- as.data.frame(enrich_result@result)
+            df$Cluster <- cluster
+            return(df)
+        } else {
+            return(NULL)
+        }
+    })
+    # Remove NULL entries
+    combined_results <- combined_results[!sapply(combined_results, is.null)]
+    if (length(combined_results) > 0) {
+        combined_results <- do.call(rbind, combined_results)
+        combined_results <- as.data.frame(combined_results)  # Ensure it's a data frame
+    } else {
+        combined_results <- data.frame()
+    }
+    return(combined_results)
+}
+# Extract and combine GO results
+combined_go_results <- extract_go_results(chTO_go_results)
+
+ # Filter for significant results
+combined_go_results <- combined_go_results %>% filter(p.adjust < 0.05)
+
+top10_per_cluster <- combined_go_results %>%
+    group_by(Cluster) %>%
+    slice_min(order_by = p.adjust, n = 10) %>%
+    ungroup()
+
+# Reorder pathways by cluster
+    unique_pathways <- top10_per_cluster %>%
+        arrange(Cluster, p.adjust) %>%
+        mutate(Description = factor(Description, levels = unique(Description)))
+```
+
+```{r}
+chTOplot_MF <-ggplot(unique_pathways, aes(x = Cluster, y = Description)) +
+    geom_point(aes(size = Count, fill = p.adjust), shape = 21, color = "black", stroke = 0.5) +
+    scale_fill_viridis_c(option = "turbo", direction = -1, limits = c(fill_limits)) +  # Set fill color scale limits
+    scale_size_continuous(range = c(1, 7), limits = size_limits) +  # Set size scale limits
+    theme_minimal() +
+    theme(
+        panel.background = element_rect(fill = "grey99", color = NA),  # Light grey background
+        panel.grid.major = element_line(color = "grey60", linewidth = 0.5),  # Grey major grid lines
+        panel.grid.minor = element_line(color = "grey60"),  # Grey minor grid lines
+        panel.border = element_rect(color = "black", fill = NA, size = 1),  # Black border around the panel
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels
+    ) +
+    labs(x = "Cluster",
+         y = "GO Term",
+         fill = "Adjusted p-value",  # Update to fill
+         size = "Gene Count")
+```
+```
